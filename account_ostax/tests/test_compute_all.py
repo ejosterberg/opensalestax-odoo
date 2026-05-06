@@ -83,13 +83,7 @@ class TestComputeAllGates(OstaxTestCase):
             }
         )
         self.tax = self.env["account.tax"].create(
-            {
-                "name": "Catalog 0%",
-                "amount": 0.0,
-                "amount_type": "percent",
-                "type_tax_use": "sale",
-                "company_id": self.company.id,
-            }
+            self._ostax_tax_vals(name="Catalog 0%", amount=0.0)
         )
 
     def test_engages_for_us_partner_with_valid_zip(self) -> None:
@@ -151,13 +145,7 @@ class TestComputeAllHappy(OstaxTestCase):
             }
         )
         self.tax = self.env["account.tax"].create(
-            {
-                "name": "Catalog 0%",
-                "amount": 0.0,
-                "amount_type": "percent",
-                "type_tax_use": "sale",
-                "company_id": self.company.id,
-            }
+            self._ostax_tax_vals(name="Catalog 0%", amount=0.0)
         )
 
     def test_returns_per_jurisdiction_breakdown(self) -> None:
@@ -245,13 +233,7 @@ class TestComputeAllExemption(OstaxTestCase):
             }
         )
         self.tax = self.env["account.tax"].create(
-            {
-                "name": "Catalog 0%",
-                "amount": 0.0,
-                "amount_type": "percent",
-                "type_tax_use": "sale",
-                "company_id": self.company.id,
-            }
+            self._ostax_tax_vals(name="Catalog 0%", amount=0.0)
         )
 
     def test_exempt_partner_returns_zero_tax_no_engine_call(self) -> None:
@@ -316,13 +298,7 @@ class TestDebugLog(OstaxTestCase):
             }
         )
         self.tax = self.env["account.tax"].create(
-            {
-                "name": "Catalog 0%",
-                "amount": 0.0,
-                "amount_type": "percent",
-                "type_tax_use": "sale",
-                "company_id": self.company.id,
-            }
+            self._ostax_tax_vals(name="Catalog 0%", amount=0.0)
         )
 
     def test_log_disabled_by_default(self) -> None:
@@ -365,13 +341,7 @@ class TestComputeAllFailures(OstaxTestCase):
             }
         )
         self.tax = self.env["account.tax"].create(
-            {
-                "name": "Catalog 5%",
-                "amount": 5.0,
-                "amount_type": "percent",
-                "type_tax_use": "sale",
-                "company_id": self.company.id,
-            }
+            self._ostax_tax_vals(name="Catalog 5%", amount=5.0)
         )
 
     def test_network_error_fail_soft_falls_back_to_super(self) -> None:

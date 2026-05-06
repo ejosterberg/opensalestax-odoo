@@ -37,3 +37,24 @@ class OstaxTestCase(TransactionCase):
                 database_connected=True,
             ),
         )
+
+    def _ostax_tax_vals(self, *, name: str, amount: float) -> dict:
+        """Cross-version-safe vals dict for account.tax.create().
+
+        Odoo 16 added a NOT NULL constraint on country_id; later versions
+        keep the field optional. We always set it to US (engine is
+        US-only) so the same dict works on all four version branches.
+        """
+        Tax = self.env["account.tax"]
+        vals = {
+            "name": name,
+            "amount": amount,
+            "amount_type": "percent",
+            "type_tax_use": "sale",
+            "company_id": self.company.id,
+        }
+        if "country_id" in Tax._fields:
+            us = self.env.ref("base.us", raise_if_not_found=False)
+            if us:
+                vals["country_id"] = us.id
+        return vals
