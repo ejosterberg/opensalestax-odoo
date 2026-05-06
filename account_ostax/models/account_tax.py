@@ -559,19 +559,23 @@ class AccountTax(models.Model):
             key = (j.name, j.type)
             if key in by_key:
                 continue
-            by_key[key] = Tax.create(
-                {
-                    "name": f"OST · {j.name} ({j.type})",
-                    "amount": 0.0,  # OST overrides the amount per-calc
-                    "amount_type": "percent",
-                    "type_tax_use": "sale",
-                    "company_id": company.id,
-                    "active": True,
-                    "ostax_synthetic": True,
-                    "ostax_jurisdiction_name": j.name,
-                    "ostax_jurisdiction_type": j.type,
-                    "sequence": _JURISDICTION_SEQUENCE.get(j.type, 99),
-                }
-            )
+            us = self.env.ref("base.us", raise_if_not_found=False)
+            vals = {
+                "name": f"OST · {j.name} ({j.type})",
+                "amount": 0.0,  # OST overrides the amount per-calc
+                "amount_type": "percent",
+                "type_tax_use": "sale",
+                "company_id": company.id,
+                "active": True,
+                "ostax_synthetic": True,
+                "ostax_jurisdiction_name": j.name,
+                "ostax_jurisdiction_type": j.type,
+                "sequence": _JURISDICTION_SEQUENCE.get(j.type, 99),
+            }
+            # Odoo 16+ has country_id on account.tax with a NOT NULL
+            # constraint. Pin to US since the engine is US-only.
+            if "country_id" in Tax._fields and us:
+                vals["country_id"] = us.id
+            by_key[key] = Tax.create(vals)
         return by_key
 
