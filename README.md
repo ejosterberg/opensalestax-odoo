@@ -80,11 +80,33 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-v0.1.0 is shipping branch-by-branch:
+**18.0 branch — `v0.1.0-alpha.1` shipped 2026-05-06.**
 
-- 18.0: in active development (this branch)
-- 17.0: backport scheduled after 18.0 lands
-- 16.0: backport scheduled after 17.0 lands
+The alpha ships the module foundation, settings + connection test,
+audit-trail breakdown capture, and direct programmatic OST
+integration (`account.tax.compute_all(...)` works as expected on the
+18.0 branch). It is **not** yet a drop-in replacement for catalog
+tax on Odoo 18 invoices — Odoo 18 routes invoice tax computation
+through a new batch engine
+(`account.tax._add_tax_details_in_base_lines()`) that bypasses the
+`compute_all` override. Hooking that entry point is the v0.1.0
+stable release's primary task. **See [CHANGELOG.md](CHANGELOG.md)
+"Known limitations" before deploying to production.**
+
+What works in alpha:
+
+- Module installs cleanly on Odoo 18 + Postgres 16
+- Settings page + Test Connection (engine v0.54.1 live)
+- Manual `tax.compute_all(...)` calls produce correct
+  per-jurisdiction breakdowns
+- `account.move._post()` captures full audit JSON of what OST
+  would compute, even when the move's tax_amount reflects the
+  catalog rate
+- Exempt partners short-circuit to zero tax
+- 32 unit tests + live integration verified
+
+17.0 and 16.0 backports follow once the 18.0 invoice integration
+is solid.
 
 Production use case: the maintainer's own Odoo 16 install (currently
 mid-migration to Odoo 18 + PostgreSQL on Debian 13 — see the
