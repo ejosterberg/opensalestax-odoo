@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "*-v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or tag to build from"
+        required: true
+        default: "18.0"
 
 jobs:
   build:
