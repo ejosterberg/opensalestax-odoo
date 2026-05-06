@@ -128,8 +128,10 @@ class AccountMove(models.Model):
 
         items: list[LineItem] = []
         for line in self.invoice_line_ids:
-            if line.display_type:
-                continue  # skip section / note lines
+            # Odoo 18 sets display_type='product' for normal lines; only
+            # skip the explicit section/note variants.
+            if line.display_type in ("line_section", "line_note"):
+                continue
             amount = Decimal(str(line.price_subtotal or 0))
             if amount <= 0:
                 continue
