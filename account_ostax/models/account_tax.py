@@ -24,7 +24,7 @@ import time
 from decimal import Decimal
 from typing import Any
 
-from odoo import _, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
@@ -70,7 +70,156 @@ class AccountTax(models.Model):
     )
 
     # ------------------------------------------------------------------
-    # Public override
+    # Odoo 18 batch tax engine override (the production-grade hook)
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _add_tax_details_in_base_lines(self, base_lines, company):
+        """Inject OST-computed tax amounts into base_lines BEFORE the standard
+        engine runs, then super() applies them via ``manual_tax_amounts``.
+
+        This is the canonical Odoo 18 hook for replacing tax computation —
+        called from ``account.move._get_rounded_base_and_tax_lines()`` and
+        therefore covers invoices, credit notes, sale orders, POS orders,
+        and anywhere else that uses the new batch tax engine.
+
+        For each base_line that should engage OST (US partner with a valid
+        5-digit ZIP, USD currency, OST-enabled company, non-exempt
+        partner): call the engine, materialize per-jurisdiction synthetic
+        taxes, swap base_line['tax_ids'] for the synthetic recordset, and
+        populate base_line['manual_tax_amounts'] with the engine's
+        per-jurisdiction amounts. ``super()`` then produces tax_details
+        using those amounts directly (the official Odoo bypass for
+        external tax computation).
+
+        Lines that don't engage (non-US, non-USD, exempt, OST disabled)
+        pass through unchanged for super() to handle with catalog rates.
+        """
+        if company and company.ostax_enabled and company.ostax_api_url:
+            for base_line in base_lines:
+                try:
+                    self._ostax_inject_into_base_line(base_line, company)
+                except UserError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    if company.ostax_fail_soft:
+                        _logger.warning(
+                            "OST batch-engine fail-soft on base line: %s", e
+                        )
+                    else:
+                        raise UserError(
+                            _("OpenSalesTax error during tax computation: %s") % e
+                        ) from e
+        return super()._add_tax_details_in_base_lines(base_lines, company)
+
+    def _ostax_inject_into_base_line(self, base_line: dict, company: Any) -> None:
+        """Mutate one base_line so the standard tax engine produces OST values."""
+        from opensalestax import (
+            Address,
+            LineItem,
+            OpenSalesTaxAPIError,
+            OpenSalesTaxNetworkError,
+            OpenSalesTaxValidationError,
+        )
+
+        partner = base_line.get("partner_id")
+        currency = base_line.get("currency_id")
+
+        # Multi-currency safety: engine is USD-only (engine constitution §5).
+        if currency and getattr(currency, "name", None) and currency.name != "USD":
+            return  # leave for super() to use catalog rate
+
+        if not self._ostax_should_engage(company, partner):
+            return
+
+        # Exempt partners → zero tax, no engine call. Strip catalog taxes too.
+        if self._ostax_partner_is_exempt(partner):
+            base_line["tax_ids"] = self.env["account.tax"]
+            base_line["manual_tax_amounts"] = {}
+            return
+
+        price_unit = float(base_line.get("price_unit") or 0.0)
+        discount = float(base_line.get("discount") or 0.0)
+        quantity = float(base_line.get("quantity") or 0.0)
+        price_after_discount = price_unit * (1 - (discount / 100.0))
+        line_total = Decimal(str(price_after_discount)) * Decimal(str(quantity))
+        if line_total <= 0:
+            return  # nothing to compute
+
+        zip_value = (partner.zip or "").strip()
+        zip5 = zip_value[:5]
+        zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
+        address = Address(zip5=zip5, zip4=zip4 or None)
+        product = base_line.get("product_id")
+        line_items = [
+            LineItem(amount=line_total, category=self._ostax_category_for(product))
+        ]
+
+        started = time.monotonic()
+        try:
+            with company._ostax_client() as client:
+                result = client.calculate(address=address, line_items=line_items)
+        except (
+            OpenSalesTaxNetworkError,
+            OpenSalesTaxValidationError,
+        ) as e:
+            if company.ostax_fail_soft:
+                _logger.warning("OST batch-engine fail-soft: %s", e)
+                return
+            raise UserError(_("OpenSalesTax error: %s") % e) from e
+        except OpenSalesTaxAPIError as e:
+            if e.status_code >= 500 and company.ostax_fail_soft:
+                _logger.warning("OST 5xx fail-soft: %s", e)
+                return
+            raise UserError(_("OpenSalesTax error: %s") % e) from e
+        rtt_ms = int((time.monotonic() - started) * 1000)
+
+        if not result.lines:
+            return
+
+        engine_line = result.lines[0]
+        synthetic_by_key = self._ostax_ensure_synthetic_taxes(
+            company, engine_line.jurisdictions
+        )
+        synthetic_ids: list[int] = []
+        manual_tax_amounts: dict[str, dict[str, float]] = {}
+        for j in engine_line.jurisdictions:
+            tax_rec = synthetic_by_key[(j.name, j.type)]
+            synthetic_ids.append(tax_rec.id)
+            j_tax = float(j.tax or Decimal("0"))
+            manual_tax_amounts[str(tax_rec.id)] = {
+                "tax_amount_currency": j_tax,
+                "base_amount_currency": float(line_total),
+            }
+
+        base_line["tax_ids"] = self.env["account.tax"].browse(synthetic_ids)
+        base_line["manual_tax_amounts"] = manual_tax_amounts
+
+        if company.ostax_debug_log_enabled:
+            try:
+                Log = self.env["ostax.calc.log"].sudo()
+                Log.create(
+                    {
+                        "company_id": company.id,
+                        "kind": "engine_call",
+                        "dest_zip": zip5,
+                        "total_amount": float(line_total),
+                        "engine_version": "",
+                        "response_ms": rtt_ms,
+                    }
+                )
+                stale = Log.search(
+                    [("company_id", "=", company.id)],
+                    order="create_date desc",
+                    offset=50,
+                )
+                if stale:
+                    stale.unlink()
+            except Exception as e:  # noqa: BLE001
+                _logger.warning("OST debug-log write failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # Public override (legacy compute_all path; covers 16/17 + edge cases)
     # ------------------------------------------------------------------
 
     def compute_all(
