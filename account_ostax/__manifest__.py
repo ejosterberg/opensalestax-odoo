@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+{
+    "name": "OpenSalesTax — US Sales Tax via OST API",
+    "summary": (
+        "Replace static US sales-tax rates with destination-based "
+        "lookups against an OpenSalesTax engine instance."
+    ),
+    "version": "18.0.0.1.0",
+    "category": "Accounting/Localizations",
+    "website": "https://github.com/ejosterberg/opensalestax-odoo",
+    "author": "Eric Osterberg",
+    "maintainers": ["ejosterberg"],
+    "license": "LGPL-3",
+    "depends": [
+        "account",
+        "sale",
+        "purchase",
+        "point_of_sale",
+    ],
+    "external_dependencies": {
+        "python": ["opensalestax"],
+    },
+    "data": [
+        "security/ir.model.access.csv",
+    ],
+    "installable": True,
+    "application": False,
+    "auto_install": False,
+    "development_status": "Alpha",
+}
