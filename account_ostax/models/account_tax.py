@@ -1,32 +1,355 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """account.tax override — the canonical OpenSalesTax integration point.
 
-The Phase 4 implementation overrides ``compute_all`` to engage the
-engine for US partners with a valid 5-digit ZIP, falling back to
-the standard catalog calculation otherwise. The Phase 9 cache
-wraps the rate lookup in tools.ormcache.
+The override engages the engine via the SDK for US partners with a
+valid 5-digit ZIP, replacing the catalog rate with a per-jurisdiction
+breakdown. Non-US partners, partners without a ZIP, or unconfigured
+companies fall through to ``super().compute_all(...)``.
 
-This stub exists so the module installs cleanly through Phases 1-3.
-The override body lands in Phase 4.
+The ``**kw`` pattern absorbs signature drift across Odoo majors:
+
+* 16.0 / 17.0: ``fixed_multiplicator``
+* 18.0:        ``rounding_method``
+
+Per the project research, no published ``account.tax.provider``
+abstraction exists in either Community or Enterprise. We override
+``compute_all`` directly, the same way Avalara's Enterprise module
+does.
 """
 
-from odoo import models
+from __future__ import annotations
+
+import logging
+from decimal import Decimal
+from typing import Any
+
+from odoo import _, fields, models
+from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
+
+# Jurisdiction-type → sequence ordering used for synthetic tax records and
+# for the order they appear in the compute_all result.
+_JURISDICTION_SEQUENCE = {
+    "state": 10,
+    "county": 20,
+    "city": 30,
+    "district": 40,
+}
 
 
 class AccountTax(models.Model):
     _inherit = "account.tax"
 
-    # Phase 4 will add:
-    #
-    #   def compute_all(self, price_unit, currency=None, quantity=1.0,
-    #                   product=None, partner=None, is_refund=False, **kw):
-    #       company = self.company_id or self.env.company
-    #       if not self._ostax_should_engage(company, partner):
-    #           return super().compute_all(price_unit, currency=currency,
-    #                                       quantity=quantity, product=product,
-    #                                       partner=partner, is_refund=is_refund,
-    #                                       **kw)
-    #       return self._ostax_compute_all(price_unit, currency=currency,
-    #                                       quantity=quantity, product=product,
-    #                                       partner=partner, is_refund=is_refund,
-    #                                       **kw)
+    ostax_synthetic = fields.Boolean(
+        string="OST synthetic",
+        default=False,
+        copy=False,
+        help=(
+            "Internal marker. Set on tax records that the OpenSalesTax "
+            "module materializes per jurisdiction on first calc. Don't "
+            "edit these directly — they're recreated as needed."
+        ),
+    )
+    ostax_jurisdiction_name = fields.Char(
+        string="OST jurisdiction name",
+        copy=False,
+        help="The name of the taxing authority (e.g. 'Hennepin County').",
+    )
+    ostax_jurisdiction_type = fields.Selection(
+        selection=[
+            ("state", "State"),
+            ("county", "County"),
+            ("city", "City"),
+            ("district", "District"),
+        ],
+        string="OST jurisdiction type",
+        copy=False,
+    )
+
+    # ------------------------------------------------------------------
+    # Public override
+    # ------------------------------------------------------------------
+
+    def compute_all(
+        self,
+        price_unit: float,
+        currency: Any = None,
+        quantity: float = 1.0,
+        product: Any = None,
+        partner: Any = None,
+        is_refund: bool = False,
+        **kw: Any,
+    ) -> dict[str, Any]:
+        """Override: engage OST for US partners, fall through otherwise.
+
+        ``**kw`` absorbs the version-specific kwargs Odoo passes:
+        ``handle_price_include``, ``include_caba_tags``,
+        ``fixed_multiplicator`` (16/17), ``rounding_method`` (18+).
+        """
+        company = self._ostax_company()
+        if not self._ostax_should_engage(company, partner):
+            return super().compute_all(
+                price_unit,
+                currency=currency,
+                quantity=quantity,
+                product=product,
+                partner=partner,
+                is_refund=is_refund,
+                **kw,
+            )
+        from opensalestax import (
+            NonUSDError,
+            OpenSalesTaxAPIError,
+            OpenSalesTaxError,
+            OpenSalesTaxNetworkError,
+            OpenSalesTaxValidationError,
+        )
+
+        try:
+            return self._ostax_compute_all(
+                company=company,
+                price_unit=price_unit,
+                currency=currency,
+                quantity=quantity,
+                product=product,
+                partner=partner,
+                is_refund=is_refund,
+                **kw,
+            )
+        except (
+            OpenSalesTaxNetworkError,
+            OpenSalesTaxValidationError,
+            NonUSDError,
+        ) as e:
+            _logger.warning("OST fail-soft (network/validation/non-USD): %s", e)
+            if company.ostax_fail_soft:
+                return super().compute_all(
+                    price_unit,
+                    currency=currency,
+                    quantity=quantity,
+                    product=product,
+                    partner=partner,
+                    is_refund=is_refund,
+                    **kw,
+                )
+            raise UserError(_("Sales-tax service unavailable: %s") % e) from e
+        except OpenSalesTaxAPIError as e:
+            if e.status_code >= 500 and company.ostax_fail_soft:
+                _logger.warning("OST 5xx fail-soft: %s", e)
+                return super().compute_all(
+                    price_unit,
+                    currency=currency,
+                    quantity=quantity,
+                    product=product,
+                    partner=partner,
+                    is_refund=is_refund,
+                    **kw,
+                )
+            _logger.error("OST API error (status=%s): %s", e.status_code, e)
+            raise UserError(_("OpenSalesTax error: %s") % e) from e
+        except OpenSalesTaxError as e:
+            # Catch-all for any future SDK error subclass. Fail-soft if
+            # configured; otherwise surface as UserError.
+            _logger.warning("OST unexpected SDK error: %s", e)
+            if company.ostax_fail_soft:
+                return super().compute_all(
+                    price_unit,
+                    currency=currency,
+                    quantity=quantity,
+                    product=product,
+                    partner=partner,
+                    is_refund=is_refund,
+                    **kw,
+                )
+            raise UserError(_("OpenSalesTax error: %s") % e) from e
+
+    # ------------------------------------------------------------------
+    # Engagement decision
+    # ------------------------------------------------------------------
+
+    def _ostax_company(self) -> Any:
+        """Resolve the company for this tax recordset.
+
+        Lazy access: prefer ``self.company_id`` (the line's company),
+        fall back to ``self.env.company`` for empty recordsets.
+        """
+        if self and self[:1].company_id:
+            return self[:1].company_id
+        return self.env.company
+
+    def _ostax_should_engage(self, company: Any, partner: Any) -> bool:
+        """Return True iff every gate passes.
+
+        Gates:
+
+        * ``ostax_enabled`` is on for the company
+        * ``ostax_api_url`` is configured
+        * ``partner`` is non-empty
+        * ``partner.country_id`` is the US
+        * ``partner.zip`` is at least 5 digits
+        """
+        if not (company and company.ostax_enabled and company.ostax_api_url):
+            return False
+        if not partner:
+            return False
+        partner = partner[:1] if hasattr(partner, "__iter__") else partner
+        us = self.env.ref("base.us", raise_if_not_found=False)
+        if not us or partner.country_id != us:
+            return False
+        zip_value = (partner.zip or "").strip()
+        if len(zip_value) < 5 or not zip_value[:5].isdigit():
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # OST core
+    # ------------------------------------------------------------------
+
+    def _ostax_compute_all(
+        self,
+        company: Any,
+        price_unit: float,
+        currency: Any,
+        quantity: float,
+        product: Any,
+        partner: Any,
+        is_refund: bool,
+        **_kw: Any,
+    ) -> dict[str, Any]:
+        """Build the engine payload, call the SDK, mash the response."""
+        from opensalestax import Address, LineItem
+
+        zip_value = (partner.zip or "").strip()
+        zip5 = zip_value[:5]
+        zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
+        address = Address(zip5=zip5, zip4=zip4 or None)
+
+        amount = Decimal(str(price_unit)) * Decimal(str(quantity))
+        category = self._ostax_category_for(product)
+        line_items = [LineItem(amount=amount, category=category)]
+
+        with company._ostax_client() as client:
+            result = client.calculate(address=address, line_items=line_items)
+
+        if not result.lines:
+            # Should never happen for a well-formed request, but if it does,
+            # treat as zero-tax (engine returned empty breakdown).
+            return self._ostax_empty_result(price_unit, quantity)
+
+        line = result.lines[0]
+        sign = -1 if is_refund else 1
+
+        synthetic_taxes_by_jurisdiction = self._ostax_ensure_synthetic_taxes(
+            company, line.jurisdictions
+        )
+
+        # Build the compute_all-style return dict.
+        base = float(amount) * sign
+        total_tax = float(line.tax) * sign
+        taxes_list: list[dict[str, Any]] = []
+        for j in line.jurisdictions:
+            tax_rec = synthetic_taxes_by_jurisdiction[(j.name, j.type)]
+            jurisdiction_tax = float(j.tax or Decimal("0")) * sign
+            taxes_list.append(
+                self._ostax_tax_dict(
+                    tax_rec=tax_rec,
+                    base=base,
+                    amount=jurisdiction_tax,
+                    sequence=_JURISDICTION_SEQUENCE.get(j.type, 99),
+                )
+            )
+
+        return {
+            "base_tags": [],
+            "taxes": taxes_list,
+            "total_excluded": base,
+            "total_included": base + total_tax,
+            "total_void": 0.0,
+        }
+
+    @staticmethod
+    def _ostax_category_for(product: Any) -> str:
+        """Map an Odoo product to an OST tax category.
+
+        v0.1 sends a generic category. v0.2 will surface a per-product
+        mapping akin to WooCom's tax-class mapper.
+        """
+        if not product:
+            return "general"
+        # Hook for future per-product mapping. For now, trust 'general'.
+        return "general"
+
+    def _ostax_empty_result(self, price_unit: float, quantity: float) -> dict[str, Any]:
+        base = price_unit * quantity
+        return {
+            "base_tags": [],
+            "taxes": [],
+            "total_excluded": base,
+            "total_included": base,
+            "total_void": 0.0,
+        }
+
+    @staticmethod
+    def _ostax_tax_dict(
+        tax_rec: Any, base: float, amount: float, sequence: int
+    ) -> dict[str, Any]:
+        """Produce one entry of the ``taxes`` list in the compute_all return."""
+        return {
+            "id": tax_rec.id,
+            "name": tax_rec.name,
+            "amount": amount,
+            "base": base,
+            "sequence": sequence,
+            "account_id": False,
+            "refund_account_id": False,
+            "analytic": False,
+            "price_include": False,
+            "tax_repartition_line_id": False,
+            "group": tax_rec.tax_group_id.id if tax_rec.tax_group_id else False,
+            "tag_ids": [],
+        }
+
+    # ------------------------------------------------------------------
+    # Synthetic-tax materialization
+    # ------------------------------------------------------------------
+
+    def _ostax_ensure_synthetic_taxes(
+        self, company: Any, jurisdictions: list[Any]
+    ) -> dict[tuple[str, str], Any]:
+        """Return a dict mapping (name, type) → account.tax record.
+
+        Materializes any missing synthetic taxes. Idempotent — repeat
+        calls return the same records.
+        """
+        Tax = self.env["account.tax"].sudo().with_context(active_test=False)
+        existing = Tax.search(
+            [
+                ("company_id", "=", company.id),
+                ("ostax_synthetic", "=", True),
+            ]
+        )
+        by_key: dict[tuple[str, str], Any] = {
+            (t.ostax_jurisdiction_name, t.ostax_jurisdiction_type): t for t in existing
+        }
+        for j in jurisdictions:
+            key = (j.name, j.type)
+            if key in by_key:
+                continue
+            by_key[key] = Tax.create(
+                {
+                    "name": f"OST · {j.name} ({j.type})",
+                    "amount": 0.0,  # OST overrides the amount per-calc
+                    "amount_type": "percent",
+                    "type_tax_use": "sale",
+                    "company_id": company.id,
+                    "active": True,
+                    "ostax_synthetic": True,
+                    "ostax_jurisdiction_name": j.name,
+                    "ostax_jurisdiction_type": j.type,
+                    "sequence": _JURISDICTION_SEQUENCE.get(j.type, 99),
+                }
+            )
+        return by_key
+
