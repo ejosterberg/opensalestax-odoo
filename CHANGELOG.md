@@ -10,7 +10,49 @@ Each branch has its own release line.
 
 ## [Unreleased] — 18.0 branch
 
-(empty — all work to date shipped under [18.0-v0.1.0-alpha.1].)
+(empty — all work to date shipped under [18.0-v0.1.0].)
+
+## [18.0-v0.1.0] — 2026-05-06
+
+> **Stable.** Closes the architectural gap from alpha.1: invoice tax
+> replacement on Odoo 18 now works end-to-end. A merchant deploying
+> this gets correct destination-based US sales tax on every customer
+> invoice, credit note, and sale order.
+
+### Added
+
+- **Override `AccountTax._add_tax_details_in_base_lines`** — the
+  Odoo 18 batch tax engine entry point. For each base line that
+  engages OST (US partner with valid 5-digit ZIP, USD currency,
+  OST-enabled company, non-exempt partner): replaces
+  `base_line['tax_ids']` with per-jurisdiction synthetic taxes and
+  populates `base_line['manual_tax_amounts']` with engine-returned
+  amounts. Odoo's standard tax engine then uses those amounts
+  directly (the official bypass for external tax computation).
+- **Multi-currency safety:** non-USD lines fall through to catalog
+  rates. The engine is USD-only by design (engine constitution §5).
+- **Verified end-to-end on Odoo 18 + Postgres 16 + l10n_generic_coa:**
+  $100 invoice to ZIP 55401 produces `amount_tax=9.03`
+  (engine-correct) with 6 per-jurisdiction tax lines visible on the
+  move. Refunds (`out_refund`) sign-flip via Odoo's standard refund
+  flow, preserving the OST breakdown.
+- 32 unit tests still pass after the new override.
+
+### Why this matters
+
+Pre-1.0 alpha could only capture audit metadata; the move's
+`amount_tax` still reflected whatever catalog rate was on the line.
+This release replaces it with the engine result. Merchants now get:
+
+- Correct destination-based tax on every customer invoice
+- Per-jurisdiction tax lines visible on the form (state, county, city,
+  district splits) — what tax authorities want to see in reporting
+- Audit JSON in the OpenSalesTax notebook tab for compliance
+- Same gates and fail-soft policy as the legacy `compute_all` path
+
+The legacy `compute_all` override remains in place — it covers
+direct programmatic calls (e.g., from custom modules) and is the
+primary tax hook on the 16.0 / 17.0 branches.
 
 ## [18.0-v0.1.0-alpha.1] — 2026-05-06
 
