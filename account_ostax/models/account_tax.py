@@ -20,6 +20,7 @@ does.
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 from typing import Any
 
@@ -99,6 +100,20 @@ class AccountTax(models.Model):
                 is_refund=is_refund,
                 **kw,
             )
+
+        # Exemption short-circuit: skip the engine entirely; the partner is
+        # tax-free at every jurisdiction. The certificate stays on the
+        # partner record for audit (merchant-tracked).
+        if self._ostax_partner_is_exempt(partner):
+            sign = -1 if is_refund else 1
+            base = float(price_unit) * float(quantity) * sign
+            return {
+                "base_tags": [],
+                "taxes": [],
+                "total_excluded": base,
+                "total_included": base,
+                "total_void": 0.0,
+            }
         from opensalestax import (
             NonUSDError,
             OpenSalesTaxAPIError,
@@ -180,7 +195,9 @@ class AccountTax(models.Model):
         return self.env.company
 
     def _ostax_should_engage(self, company: Any, partner: Any) -> bool:
-        """Return True iff every gate passes.
+        """Return True iff every gate passes (excluding exemption — that's a
+        separate check, since exempt partners still go through OST logic but
+        short-circuit to zero tax).
 
         Gates:
 
@@ -201,6 +218,31 @@ class AccountTax(models.Model):
         zip_value = (partner.zip or "").strip()
         if len(zip_value) < 5 or not zip_value[:5].isdigit():
             return False
+        return True
+
+    @staticmethod
+    def _ostax_partner_is_exempt(partner: Any) -> bool:
+        """True if the partner carries a valid (unexpired) OST exemption certificate.
+
+        v0.1 short-circuits exempt partners to zero tax without calling the
+        engine — the engine API doesn't accept exemption fields in calc
+        requests yet, and exempt partners are tax-free at every jurisdiction
+        regardless. The certificate itself stays on the partner record for
+        audit; the merchant is responsible for keeping it current.
+        """
+        if not partner:
+            return False
+        partner = partner[:1] if hasattr(partner, "__iter__") else partner
+        cert = (getattr(partner, "ostax_exemption_certificate", "") or "").strip()
+        if not cert:
+            return False
+        expiry = getattr(partner, "ostax_exemption_expiry", False)
+        if expiry:
+            from odoo import fields as odoo_fields  # lazy
+
+            today = odoo_fields.Date.context_today(partner)
+            if expiry < today:
+                return False
         return True
 
     # ------------------------------------------------------------------
@@ -230,8 +272,35 @@ class AccountTax(models.Model):
         category = self._ostax_category_for(product)
         line_items = [LineItem(amount=amount, category=category)]
 
+        started = time.monotonic()
         with company._ostax_client() as client:
             result = client.calculate(address=address, line_items=line_items)
+        rtt_ms = int((time.monotonic() - started) * 1000)
+
+        # Phase 9 — opt-in debug log of the call.
+        if company.ostax_debug_log_enabled:
+            try:
+                self.env["ostax.calc.log"].sudo().create(
+                    {
+                        "company_id": company.id,
+                        "kind": "engine_call",
+                        "dest_zip": zip5,
+                        "total_amount": float(amount),
+                        "engine_version": "",
+                        "response_ms": rtt_ms,
+                    }
+                )
+                # Trim to last 50 entries per company (ring-buffer-ish).
+                Log = self.env["ostax.calc.log"].sudo()
+                recent = Log.search(
+                    [("company_id", "=", company.id)],
+                    order="create_date desc",
+                    offset=50,
+                )
+                if recent:
+                    recent.unlink()
+            except Exception as e:  # noqa: BLE001
+                _logger.warning("OST debug-log write failed: %s", e)
 
         if not result.lines:
             # Should never happen for a well-formed request, but if it does,

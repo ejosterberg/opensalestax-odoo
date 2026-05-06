@@ -226,6 +226,134 @@ class TestComputeAllHappy(OstaxTestCase):
 
 
 @tagged("post_install", "-at_install")
+class TestComputeAllExemption(OstaxTestCase):
+    """Phase 7 — exemption short-circuit.
+
+    Partners with a valid (unexpired) exemption certificate skip the
+    engine entirely and produce zero tax.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.partner = self.env["res.partner"].create(
+            {
+                "name": "Exempt Reseller",
+                "country_id": self.us_country.id,
+                "zip": "55401",
+                "ostax_exemption_certificate": "MN-RESALE-12345",
+                "ostax_use_code": "resale",
+            }
+        )
+        self.tax = self.env["account.tax"].create(
+            {
+                "name": "Catalog 0%",
+                "amount": 0.0,
+                "amount_type": "percent",
+                "type_tax_use": "sale",
+                "company_id": self.company.id,
+            }
+        )
+
+    def test_exempt_partner_returns_zero_tax_no_engine_call(self) -> None:
+        with patch("opensalestax.OpenSalesTaxClient.calculate") as m:
+            result = self.tax.compute_all(100.0, partner=self.partner)
+        m.assert_not_called()
+        self.assertEqual(result["taxes"], [])
+        self.assertEqual(result["total_excluded"], 100.0)
+        self.assertEqual(result["total_included"], 100.0)
+
+    def test_exempt_refund_flips_signs_still_zero_tax(self) -> None:
+        with patch("opensalestax.OpenSalesTaxClient.calculate") as m:
+            result = self.tax.compute_all(
+                100.0, partner=self.partner, is_refund=True
+            )
+        m.assert_not_called()
+        self.assertEqual(result["total_excluded"], -100.0)
+        self.assertEqual(result["total_included"], -100.0)
+
+    def test_expired_certificate_does_not_apply(self) -> None:
+        from datetime import date, timedelta
+
+        self.partner.ostax_exemption_expiry = date.today() - timedelta(days=1)
+        with patch(
+            "opensalestax.OpenSalesTaxClient.calculate",
+            return_value=_mock_calc_result(),
+        ) as m:
+            result = self.tax.compute_all(100.0, partner=self.partner)
+        m.assert_called_once()
+        self.assertEqual(len(result["taxes"]), 4)
+
+    def test_future_expiry_applies(self) -> None:
+        from datetime import date, timedelta
+
+        self.partner.ostax_exemption_expiry = date.today() + timedelta(days=30)
+        with patch("opensalestax.OpenSalesTaxClient.calculate") as m:
+            result = self.tax.compute_all(100.0, partner=self.partner)
+        m.assert_not_called()
+        self.assertEqual(result["taxes"], [])
+
+    def test_no_certificate_does_not_apply(self) -> None:
+        self.partner.ostax_exemption_certificate = False
+        with patch(
+            "opensalestax.OpenSalesTaxClient.calculate",
+            return_value=_mock_calc_result(),
+        ) as m:
+            self.tax.compute_all(100.0, partner=self.partner)
+        m.assert_called_once()
+
+
+@tagged("post_install", "-at_install")
+class TestDebugLog(OstaxTestCase):
+    """Phase 9 — opt-in debug log of engine calls."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.partner = self.env["res.partner"].create(
+            {
+                "name": "MSP Customer",
+                "country_id": self.us_country.id,
+                "zip": "55401",
+            }
+        )
+        self.tax = self.env["account.tax"].create(
+            {
+                "name": "Catalog 0%",
+                "amount": 0.0,
+                "amount_type": "percent",
+                "type_tax_use": "sale",
+                "company_id": self.company.id,
+            }
+        )
+
+    def test_log_disabled_by_default(self) -> None:
+        self.company.ostax_debug_log_enabled = False
+        with patch(
+            "opensalestax.OpenSalesTaxClient.calculate",
+            return_value=_mock_calc_result(),
+        ):
+            self.tax.compute_all(100.0, partner=self.partner)
+        logs = self.env["ostax.calc.log"].search(
+            [("company_id", "=", self.company.id)]
+        )
+        self.assertEqual(len(logs), 0)
+
+    def test_log_writes_when_enabled(self) -> None:
+        self.company.ostax_debug_log_enabled = True
+        with patch(
+            "opensalestax.OpenSalesTaxClient.calculate",
+            return_value=_mock_calc_result(),
+        ):
+            self.tax.compute_all(100.0, partner=self.partner)
+        logs = self.env["ostax.calc.log"].search(
+            [("company_id", "=", self.company.id)]
+        )
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0].kind, "engine_call")
+        self.assertEqual(logs[0].dest_zip, "55401")
+        self.assertGreaterEqual(logs[0].response_ms, 0)
+
+
+@tagged("post_install", "-at_install")
 class TestComputeAllFailures(OstaxTestCase):
     def setUp(self) -> None:
         super().setUp()
