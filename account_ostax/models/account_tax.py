@@ -110,7 +110,11 @@ class AccountTax(models.Model):
                         raise UserError(
                             _("OpenSalesTax error during tax computation: %s") % e
                         ) from e
-        return super()._add_tax_details_in_base_lines(base_lines, company)
+        # Cross-version safe: Odoo 16/17 don't define this method.
+        parent = getattr(super(), "_add_tax_details_in_base_lines", None)
+        if parent is None:
+            return None
+        return parent(base_lines, company)
 
     def _ostax_inject_into_base_line(self, base_line: dict, company: Any) -> None:
         """Mutate one base_line so the standard tax engine produces OST values."""
