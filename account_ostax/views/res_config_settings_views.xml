@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+<odoo>
+    <record id="res_config_settings_view_form_ostax" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.ostax</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="account.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//block[@id='analytic_accounting_setting_container']" position="after">
+                <block title="OpenSalesTax — destination-based US sales tax"
+                       id="ostax_settings_block">
+                    <setting id="ostax_enable_setting"
+                             help="Replace static US tax rates with destination-based calculation against your OpenSalesTax engine.">
+                        <field name="ostax_enabled"/>
+                        <div class="content-group" invisible="not ostax_enabled">
+                            <div class="row mt16 o_settings_container">
+                                <div class="col-12 col-lg-12 o_setting_box">
+                                    <label for="ostax_api_url"/>
+                                    <field name="ostax_api_url"
+                                           placeholder="http://your-ost.example.com:8080"/>
+                                </div>
+                                <div class="col-12 col-lg-6 o_setting_box">
+                                    <label for="ostax_api_key"/>
+                                    <field name="ostax_api_key"
+                                           password="True"
+                                           placeholder="optional Bearer token"/>
+                                </div>
+                                <div class="col-12 col-lg-6 o_setting_box">
+                                    <label for="ostax_origin_address_id"/>
+                                    <field name="ostax_origin_address_id"/>
+                                </div>
+                                <div class="col-12 col-lg-4 o_setting_box">
+                                    <label for="ostax_cache_ttl_hours"/>
+                                    <field name="ostax_cache_ttl_hours"/>
+                                </div>
+                                <div class="col-12 col-lg-4 o_setting_box">
+                                    <field name="ostax_fail_soft"/>
+                                    <label for="ostax_fail_soft"/>
+                                </div>
+                                <div class="col-12 col-lg-4 o_setting_box">
+                                    <field name="ostax_pos_live_quote"/>
+                                    <label for="ostax_pos_live_quote"/>
+                                </div>
+                                <div class="col-12 col-lg-4 o_setting_box">
+                                    <field name="ostax_debug_log_enabled"/>
+                                    <label for="ostax_debug_log_enabled"/>
+                                </div>
+                                <div class="col-12 col-lg-12 mt16">
+                                    <button type="object"
+                                            name="action_ostax_test_connection"
+                                            string="Test Connection"
+                                            class="btn-primary"
+                                            icon="fa-link"/>
+                                </div>
+                            </div>
+                            <div class="text-muted mt16" style="font-size: 0.85em;">
+                                <p>
+                                    Tax calculations are provided as-is for convenience.
+                                    The merchant is solely responsible for tax-collection
+                                    accuracy and remittance to the appropriate
+                                    jurisdictions. Verify against your state Department
+                                    of Revenue before remitting.
+                                </p>
+                            </div>
+                        </div>
+                    </setting>
+                </block>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>

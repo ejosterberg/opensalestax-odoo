@@ -1,16 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Per-company OpenSalesTax settings.
+"""Per-company OpenSalesTax settings + engine-client helper.
 
-The settings live on res.company so multi-company Odoo deployments
-can configure per-company engines (or disable OST per company
-without disabling globally).
+Settings live on res.company so multi-company Odoo deployments can
+configure per-company engines (or disable OST per company without
+disabling globally).
 
-Phase 3 (settings + connection test) populates the engine-client
-helper and the Test Connection action. Phase 9 wires the cache
-TTL into ormcache.
+Phase 3 (this file) populates the engine-client helper and the
+Test Connection action. Phase 9 wires the cache TTL into ormcache.
 """
 
-from odoo import fields, models
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+from odoo import _, fields, models
+from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 
 class ResCompany(models.Model):
@@ -77,3 +85,100 @@ class ResCompany(models.Model):
             "OpenSalesTax → Recent calculations."
         ),
     )
+
+    def _ostax_client(self) -> Any:
+        """Return an OpenSalesTaxClient for this company.
+
+        Lazy-imported so the module installs cleanly even if the
+        ``opensalestax`` package isn't on the path yet (the
+        ``external_dependencies`` manifest entry blocks install in
+        that case, but the import shouldn't run at module-load time).
+
+        Raises :class:`UserError` if the company hasn't configured
+        the engine URL.
+        """
+        self.ensure_one()
+        if not self.ostax_api_url:
+            raise UserError(
+                _("OpenSalesTax engine URL not configured for company %s.") % self.name
+            )
+        from opensalestax import OpenSalesTaxClient
+
+        return OpenSalesTaxClient(
+            base_url=self.ostax_api_url,
+            api_key=self.ostax_api_key or None,
+            timeout=10.0,
+            user_agent=f"opensalestax-odoo/18.0 (Odoo company={self.id})",
+        )
+
+    def action_ostax_test_connection(self) -> dict[str, Any]:
+        """Settings-page button: ping ``/v1/health`` and surface the result.
+
+        Returns an ``ir.actions.client`` notification action so the
+        result toasts inline without leaving the settings page.
+        """
+        self.ensure_one()
+        from opensalestax import (  # noqa: PLC0415 — lazy import per _ostax_client
+            OpenSalesTaxAPIError,
+            OpenSalesTaxNetworkError,
+            OpenSalesTaxValidationError,
+        )
+
+        try:
+            with self._ostax_client() as client:
+                started = time.monotonic()
+                health = client.health()
+                rtt_ms = int((time.monotonic() - started) * 1000)
+        except OpenSalesTaxNetworkError as e:
+            return self._ostax_notification(
+                _("Engine unreachable"),
+                _("%s\n\nCheck the engine URL and network connectivity.") % e,
+                "danger",
+            )
+        except OpenSalesTaxAPIError as e:
+            return self._ostax_notification(
+                _("Engine returned HTTP %s") % e.status_code,
+                str(e),
+                "warning",
+            )
+        except OpenSalesTaxValidationError as e:
+            return self._ostax_notification(
+                _("Unexpected response shape"),
+                _("Engine version mismatch likely. Details: %s") % e,
+                "warning",
+            )
+        except UserError:
+            raise
+        except Exception as e:  # noqa: BLE001 — final safety net
+            _logger.exception("Unexpected error in OST connection test")
+            return self._ostax_notification(
+                _("Unexpected error"), str(e), "danger"
+            )
+
+        return self._ostax_notification(
+            _("Connection OK"),
+            _(
+                "Engine v%(version)s · status=%(status)s · "
+                "DB %(db)s · RTT %(rtt)d ms"
+            )
+            % {
+                "version": health.version,
+                "status": health.status,
+                "db": "OK" if health.database_connected else "DOWN",
+                "rtt": rtt_ms,
+            },
+            "success" if health.status == "ok" else "warning",
+        )
+
+    @staticmethod
+    def _ostax_notification(title: str, message: str, kind: str) -> dict[str, Any]:
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": title,
+                "message": message,
+                "type": kind,
+                "sticky": kind != "success",
+            },
+        }

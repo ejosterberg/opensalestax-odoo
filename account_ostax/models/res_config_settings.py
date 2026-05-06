@@ -2,9 +2,12 @@
 """Settings page wiring — exposes res.company.ostax_* fields under
 Settings → Accounting → OpenSalesTax.
 
-Phase 3 will populate this with the actual fields (related to
-res.company) and wire the Test Connection button.
+The Test Connection button delegates to the underlying res.company
+record so the same logic powers both the inline settings UI and
+any direct calls (e.g. the eventual debug menu).
 """
+
+from typing import Any
 
 from odoo import fields, models
 
@@ -28,3 +31,8 @@ class ResConfigSettings(models.TransientModel):
     ostax_debug_log_enabled = fields.Boolean(
         related="company_id.ostax_debug_log_enabled", readonly=False
     )
+
+    def action_ostax_test_connection(self) -> dict[str, Any]:
+        """Forward to the company-level connection test."""
+        self.ensure_one()
+        return self.company_id.action_ostax_test_connection()
