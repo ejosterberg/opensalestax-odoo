@@ -538,13 +538,17 @@ class AccountTax(models.Model):
     def _ostax_category_for(product: Any) -> str:
         """Map an Odoo product to an OST tax category.
 
-        v0.1 sends a generic category. v0.2 will surface a per-product
-        mapping akin to WooCom's tax-class mapper.
+        Reads ``product.product_tmpl_id.ostax_category`` (added in
+        v0.1.13). Falls back to ``"general"`` if the product is None,
+        the field is unset, or the product model doesn't carry the
+        field for some reason (defensive — older databases that haven't
+        run the v0.1.13 migration yet).
         """
         if not product:
             return "general"
-        # Hook for future per-product mapping. For now, trust 'general'.
-        return "general"
+        template = getattr(product, "product_tmpl_id", None) or product
+        category = getattr(template, "ostax_category", None)
+        return category or "general"
 
     def _ostax_empty_result(self, price_unit: float, quantity: float) -> dict[str, Any]:
         base = price_unit * quantity
