@@ -138,6 +138,19 @@ class AccountTax(models.Model):
         if currency and getattr(currency, "name", None) and currency.name != "USD":
             return  # leave for super() to use catalog rate
 
+        # Defensive: bypass on inbound moves (vendor bills, vendor
+        # refunds). Use-tax accrual on vendor bills uses the BUYER's
+        # location, not the partner's (vendor's) — and the engine call
+        # would otherwise produce wrong numbers. Proper use-tax
+        # accrual lands in v0.2 with a separate code path; until
+        # then, vendor bills fall through to Odoo's standard catalog
+        # rates.
+        record = base_line.get("record")
+        if record is not None and getattr(record, "_name", None) == "account.move.line":
+            move_type = getattr(getattr(record, "move_id", None), "move_type", "")
+            if move_type and move_type.startswith("in_"):
+                return
+
         if not self._ostax_should_engage(company, partner):
             return
 
@@ -282,6 +295,23 @@ class AccountTax(models.Model):
         ``fixed_multiplicator`` (16/17), ``rounding_method`` (18+).
         """
         company = self._ostax_company()
+        # Defensive: only engage on sales taxes. Purchase taxes (vendor
+        # bills, customs) call into a different scenario — use-tax
+        # accrual at the BUYER's location, not the partner's. The v0.1
+        # engine call uses partner.zip which is the vendor's address on
+        # vendor bills, producing nonsensical numbers. Proper use-tax
+        # accrual lands in v0.2 with a separate code path; until then,
+        # purchase taxes fall through to Odoo's standard catalog rates.
+        if self and self[:1].type_tax_use and self[:1].type_tax_use != "sale":
+            return super().compute_all(
+                price_unit,
+                currency=currency,
+                quantity=quantity,
+                product=product,
+                partner=partner,
+                is_refund=is_refund,
+                **kw,
+            )
         if not self._ostax_should_engage(company, partner):
             return super().compute_all(
                 price_unit,
