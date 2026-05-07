@@ -22,6 +22,7 @@
     },
     "data": [
         "security/ir.model.access.csv",
+        "data/ostax_cron.xml",
         "views/res_config_settings_views.xml",
         "views/account_move_views.xml",
     ],
