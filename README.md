@@ -29,32 +29,78 @@ Pick the branch matching your Odoo install. Releases are independent per branch.
 
 ## What you get
 
-- Sales orders, customer invoices, credit notes/refunds, vendor bills, POS,
-  purchase orders — all with destination-based per-jurisdiction US tax
+- Sales orders, customer invoices, credit notes/refunds, POS — all with
+  destination-based per-jurisdiction US tax
 - Per-jurisdiction breakdown stored on every move (state / county / city /
   district), rendered on the form view for full audit trail
+- **Per-product taxability category** (`product.template.ostax_category` —
+  general / clothing / groceries / prescription_drugs / prepared_food /
+  digital_goods); engine applies per-state taxability rules (e.g. Minnesota
+  exempts clothing, New York taxes prepared food differently than
+  groceries)
+- **Per-category default with parent-walk inheritance** — mark "Apparel"
+  as `clothing` once on `product.category`, every product underneath
+  inherits unless overridden. Closest-ancestor wins.
+- **Per-worker engine-response cache** (~1 hour sliding TTL) — repeat
+  calculations within the same hour for the same line shape skip the
+  engine. Helpful for batch invoicing, recurring orders, multi-line carts.
 - Customer exemption certificates on `res.partner`
 - Multi-company support — settings scoped per company
 - Fiscal-position interop — non-US partners route through Odoo's standard
   "Export" mapping; the connector only engages for US shipping addresses
-- Settings page with engine connection test, cache TTL, fail-soft toggle
+- Settings page with engine connection test, fail-soft toggle
 - Optional admin debug log of recent calculations
+- Optional 90-day archive cron for jurisdictions you've stopped shipping to
+
+## What's deferred to v0.2
+
+- **Vendor bills + use-tax accrual.** Use tax is owed at the buyer's
+  location, not the vendor's; v0.1 doesn't yet implement the
+  buyer-location code path. Vendor bills (and any purchase-typed
+  catalog tax) bypass the connector and fall through to Odoo's standard
+  catalog rates — see v0.1.15.
+- **POS live-quote.** Server-authoritative compute on order close
+  works; per-line live JS-side round-trip on each line-add is a v0.2
+  enhancement.
 
 ## Install
 
 ```bash
 # Match the branch to your Odoo major:
 pip install opensalestax  # the Python SDK
-pip install odoo-addon-account-ostax==18.0.0.1.0  # this connector for Odoo 18
+pip install 'odoo-addon-account-ostax>=16.0.0.1.12,<17.0'  # for Odoo 16
+# (use >=17.0.0.1.15,<18.0 / >=18.0.0.1.15,<19.0 / >=19.0.0.1.15,<20.0
+# for the other branches)
 
 # Or install from source:
-git clone -b 18.0 https://github.com/ejosterberg/opensalestax-odoo.git
+git clone -b 16.0 https://github.com/ejosterberg/opensalestax-odoo.git
 cd opensalestax-odoo
 # Symlink or copy account_ostax/ into your Odoo addons-path
 ```
 
+> **Note for Odoo 16 users:** The `16.0.0.1.11` wheel is broken
+> (a `tools.ormcache` annotation-stripping bug — see CHANGELOG
+> for v0.1.12). Pin **`>=16.0.0.1.12`** or use the latest.
+
 Then in Odoo: **Apps → search "OpenSalesTax" → Install**, then
 **Settings → Accounting → OpenSalesTax** to configure the engine URL.
+
+## Configuring per-product / per-category taxability
+
+For most products, leave everything at the defaults — the engine treats
+unflagged products as `general` taxable goods.
+
+For products in special-taxability categories (clothing, groceries,
+prescription drugs, prepared food, digital goods), set the category on:
+
+- **The product** (Inventory → Products → form view → Accounting tab →
+  *OST tax category*), OR
+- **The product's internal category** (Inventory → Configuration →
+  Product Categories → form view → *OST tax category default*) — every
+  descendant product inherits unless overridden.
+
+The lookup precedence is: per-product → product's category → walk up
+`parent_id` until a value is found → fall back to `general`.
 
 ## How it works
 
@@ -83,17 +129,21 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-**Production-grade across all four Odoo majors.** v0.1.5+ is shipping
-on PyPI as `odoo-addon-account-ostax==<branch>.0.1.5` for 16.0,
-17.0, 18.0, and 19.0.
+**Production-grade across all four Odoo majors.** v0.1.15 is shipping
+on PyPI as `odoo-addon-account-ostax==<branch>.0.1.15` for 16.0,
+17.0, 18.0, and 19.0. Per-branch test workflows green on every
+branch; 49 unit tests pass on real Odoo + Postgres in Docker.
 
 What works on every branch:
 
 - Real destination-based per-jurisdiction US sales tax on every
   customer invoice, sale order, credit note (state / county / city /
   district splits in the totals area)
+- Line-level OST jurisdiction tags persisted on posted invoices
 - Engine audit JSON captured on `_post()` (engine version, calc
   timestamp, full per-jurisdiction detail)
+- Per-product + per-category OST taxability mapping
+- Per-worker engine-response cache (~1h sliding TTL)
 - Customer exemption certificate handling
 - Multi-company isolation
 - Settings page + Test Connection action
@@ -115,5 +165,4 @@ How it's wired:
 Verified end-to-end on real Odoo + Postgres in Docker against the
 live engine, including Odoo's official US chart of accounts
 (`l10n_us`): $100 invoice to MSP (ZIP 55401) produces
-`amount_tax=9.03` with 6 per-jurisdiction lines. 32 unit tests pass
-on each branch.
+`amount_tax=9.03` with 6 per-jurisdiction lines.
