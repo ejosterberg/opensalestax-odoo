@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -565,11 +566,15 @@ class AccountTax(models.Model):
             (t.ostax_jurisdiction_name, t.ostax_jurisdiction_type): t for t in existing
         }
         # Backfill: if an existing synthetic was created before per-type
-        # groups existed (pre-v0.1.3), assign the group now.
+        # groups existed (pre-v0.1.3), assign the group now. Also
+        # reactivate any synthetic that was archived by the unused-prune
+        # cron — the merchant is now selling to that jurisdiction again.
         for t in existing:
             target_group = groups_by_type.get(t.ostax_jurisdiction_type)
             if target_group and t.tax_group_id != target_group:
                 t.tax_group_id = target_group.id
+            if not t.active:
+                t.active = True
         for j in jurisdictions:
             key = (j.name, j.type)
             if key in by_key:
@@ -595,6 +600,48 @@ class AccountTax(models.Model):
                 vals["tax_group_id"] = target_group.id
             by_key[key] = Tax.create(vals)
         return by_key
+
+    @api.model
+    def _ostax_archive_unused_synthetics(self, days_unused: int = 90) -> int:
+        """Archive synthetic OST taxes not referenced as a tax_line on any
+        ``account.move.line`` in the last ``days_unused`` days.
+
+        Triggered by the optional ``ir.cron`` job (disabled by default;
+        enable under Settings → Technical → Scheduled Actions). Soft
+        archive only — sets ``active=False``. Records remain referenced
+        from historical journal entries; they're just hidden from the
+        default tax dropdowns. The next OST calculation that hits the
+        same jurisdiction will reactivate the record (see
+        ``_ostax_ensure_synthetic_taxes``).
+
+        Returns the count of records archived.
+        """
+        cutoff = fields.Date.today() - timedelta(days=days_unused)
+        Tax = self.env["account.tax"].with_context(active_test=False)
+        Line = self.env["account.move.line"]
+        candidates = Tax.search([
+            ("ostax_synthetic", "=", True),
+            ("active", "=", True),
+        ])
+        archived_ids: list[int] = []
+        for tax in candidates:
+            recent = Line.search_count(
+                [
+                    ("tax_line_id", "=", tax.id),
+                    ("date", ">=", cutoff),
+                ],
+                limit=1,
+            )
+            if not recent:
+                archived_ids.append(tax.id)
+        if archived_ids:
+            Tax.browse(archived_ids).write({"active": False})
+            _logger.info(
+                "OST archived %s unused synthetic taxes (cutoff=%s)",
+                len(archived_ids),
+                cutoff,
+            )
+        return len(archived_ids)
 
     def _ostax_ensure_tax_groups(self, company: Any) -> dict[str, Any]:
         """Return a dict mapping jurisdiction type → ``account.tax.group``.
