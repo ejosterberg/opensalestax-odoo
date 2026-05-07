@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""v0.1.13 — per-product OST tax-category mapping."""
+"""v0.1.13 + v0.1.14 — per-product and per-category OST tax-category mapping."""
 
 from __future__ import annotations
 
@@ -10,13 +10,12 @@ from .common import OstaxTestCase
 
 @tagged("post_install", "-at_install")
 class TestProductCategory(OstaxTestCase):
-    """Verify ``product.template.ostax_category`` flows into the
-    payload sent to the engine."""
+    """Verify ``product.template.ostax_category`` (v0.1.13) flows
+    into the payload sent to the engine."""
 
     def setUp(self) -> None:
         super().setUp()
-        Tax = self.env["account.tax"]
-        self.Tax = Tax
+        self.Tax = self.env["account.tax"]
 
     def test_field_defaults_to_general(self) -> None:
         product = self.env["product.product"].create({"name": "Plain widget"})
@@ -74,3 +73,81 @@ class TestProductCategory(OstaxTestCase):
             "digital_goods",
         }
         self.assertEqual(keys, expected)
+
+
+@tagged("post_install", "-at_install")
+class TestProductCategoryInheritance(OstaxTestCase):
+    """v0.1.14 — ``product.category.ostax_category`` provides a
+    default that products inherit; the lookup walks up
+    ``parent_id`` until a value is found, then falls back to
+    ``"general"``. Per-product overrides on the template still win."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.Tax = self.env["account.tax"]
+        Cat = self.env["product.category"]
+        # Build a 3-deep tree:  Apparel(clothing) → Tops(unset) → T-Shirts(unset)
+        self.cat_apparel = Cat.create({
+            "name": "OST Test Apparel",
+            "ostax_category": "clothing",
+        })
+        self.cat_tops = Cat.create({
+            "name": "OST Test Tops",
+            "parent_id": self.cat_apparel.id,
+        })
+        self.cat_tshirts = Cat.create({
+            "name": "OST Test T-Shirts",
+            "parent_id": self.cat_tops.id,
+        })
+
+    def test_category_field_defaults_to_unset(self) -> None:
+        cat = self.env["product.category"].create({"name": "Bare"})
+        self.assertFalse(cat.ostax_category)
+
+    def test_product_inherits_directly_from_category(self) -> None:
+        product = self.env["product.product"].create({
+            "name": "Sock",
+            "categ_id": self.cat_apparel.id,
+        })
+        # Template field unset → falls through to category
+        product.product_tmpl_id.ostax_category = False
+        self.assertEqual(self.Tax._ostax_category_for(product), "clothing")
+
+    def test_product_walks_up_parent_chain(self) -> None:
+        product = self.env["product.product"].create({
+            "name": "Tee",
+            "categ_id": self.cat_tshirts.id,
+        })
+        # Template, immediate category, AND its parent are all unset —
+        # only the grandparent (Apparel) carries "clothing".
+        product.product_tmpl_id.ostax_category = False
+        self.assertEqual(self.Tax._ostax_category_for(product), "clothing")
+
+    def test_product_template_override_wins_over_category(self) -> None:
+        product = self.env["product.product"].create({
+            "name": "Premium tee",
+            "categ_id": self.cat_apparel.id,
+        })
+        product.product_tmpl_id.ostax_category = "digital_goods"
+        # Per-product override beats the category default
+        self.assertEqual(self.Tax._ostax_category_for(product), "digital_goods")
+
+    def test_intermediate_category_value_wins_over_root(self) -> None:
+        """If a mid-tree category has a value, it wins over an
+        ancestor's value (closest-ancestor-wins)."""
+        self.cat_tops.ostax_category = "groceries"  # nonsensical but tests precedence
+        product = self.env["product.product"].create({
+            "name": "Mid-tree product",
+            "categ_id": self.cat_tshirts.id,
+        })
+        product.product_tmpl_id.ostax_category = False
+        self.assertEqual(self.Tax._ostax_category_for(product), "groceries")
+
+    def test_unset_chain_falls_back_to_general(self) -> None:
+        cat = self.env["product.category"].create({"name": "All-unset"})
+        product = self.env["product.product"].create({
+            "name": "Plain product",
+            "categ_id": cat.id,
+        })
+        product.product_tmpl_id.ostax_category = False
+        self.assertEqual(self.Tax._ostax_category_for(product), "general")
