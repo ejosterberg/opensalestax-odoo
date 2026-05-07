@@ -544,8 +544,17 @@ class AccountTax(models.Model):
 
         Materializes any missing synthetic taxes. Idempotent — repeat
         calls return the same records.
+
+        Each synthetic tax is assigned to a per-jurisdiction-type
+        ``account.tax.group`` ("OpenSalesTax — State", "— County",
+        "— City", "— District") so the totals area on invoices /
+        sale orders shows meaningful labels instead of falling back
+        to the chart-of-accounts default group ("Tax 15%" on
+        ``l10n_generic_coa``, etc.).
         """
         Tax = self.env["account.tax"].sudo().with_context(active_test=False)
+        groups_by_type = self._ostax_ensure_tax_groups(company)
+        us = self.env.ref("base.us", raise_if_not_found=False)
         existing = Tax.search(
             [
                 ("company_id", "=", company.id),
@@ -555,11 +564,16 @@ class AccountTax(models.Model):
         by_key: dict[tuple[str, str], Any] = {
             (t.ostax_jurisdiction_name, t.ostax_jurisdiction_type): t for t in existing
         }
+        # Backfill: if an existing synthetic was created before per-type
+        # groups existed (pre-v0.1.3), assign the group now.
+        for t in existing:
+            target_group = groups_by_type.get(t.ostax_jurisdiction_type)
+            if target_group and t.tax_group_id != target_group:
+                t.tax_group_id = target_group.id
         for j in jurisdictions:
             key = (j.name, j.type)
             if key in by_key:
                 continue
-            us = self.env.ref("base.us", raise_if_not_found=False)
             vals = {
                 "name": f"OST · {j.name} ({j.type})",
                 "amount": 0.0,  # OST overrides the amount per-calc
@@ -576,6 +590,43 @@ class AccountTax(models.Model):
             # constraint. Pin to US since the engine is US-only.
             if "country_id" in Tax._fields and us:
                 vals["country_id"] = us.id
+            target_group = groups_by_type.get(j.type)
+            if target_group:
+                vals["tax_group_id"] = target_group.id
             by_key[key] = Tax.create(vals)
         return by_key
+
+    def _ostax_ensure_tax_groups(self, company: Any) -> dict[str, Any]:
+        """Return a dict mapping jurisdiction type → ``account.tax.group``.
+
+        Materializes the four per-type groups idempotently. Per-jurisdiction-type
+        grouping makes the totals area on invoices show meaningful labels:
+
+        * OpenSalesTax — State
+        * OpenSalesTax — County
+        * OpenSalesTax — City
+        * OpenSalesTax — District
+
+        instead of the chart-of-accounts default ("Tax 15%" or similar).
+        """
+        Group = self.env["account.tax.group"].sudo()
+        us = self.env.ref("base.us", raise_if_not_found=False)
+        groups: dict[str, Any] = {}
+        for jtype in ("state", "county", "city", "district"):
+            label = f"OpenSalesTax — {jtype.capitalize()}"
+            domain = [("name", "=", label), ("company_id", "=", company.id)]
+            existing = Group.search(domain, limit=1)
+            if existing:
+                groups[jtype] = existing
+                continue
+            vals: dict[str, Any] = {
+                "name": label,
+                "company_id": company.id,
+                "sequence": _JURISDICTION_SEQUENCE.get(jtype, 99),
+            }
+            # Odoo 17+ added country_id on account.tax.group too.
+            if "country_id" in Group._fields and us:
+                vals["country_id"] = us.id
+            groups[jtype] = Group.create(vals)
+        return groups
 
