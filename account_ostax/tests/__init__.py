@@ -2,3 +2,4 @@
 from . import test_compute_all
 from . import test_product_category
 from . import test_settings
+from . import test_vendor_bypass
