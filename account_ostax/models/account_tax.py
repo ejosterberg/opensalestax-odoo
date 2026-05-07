@@ -658,21 +658,29 @@ class AccountTax(models.Model):
         """
         Group = self.env["account.tax.group"].sudo()
         us = self.env.ref("base.us", raise_if_not_found=False)
+        # Cross-version field-existence guards. Odoo 16's
+        # account.tax.group has no company_id (groups are global on 16);
+        # 17+ added it. country_id was added at the same time. Always
+        # check before filtering or writing.
+        has_company = "company_id" in Group._fields
+        has_country = "country_id" in Group._fields
         groups: dict[str, Any] = {}
         for jtype in ("state", "county", "city", "district"):
             label = f"OpenSalesTax — {jtype.capitalize()}"
-            domain = [("name", "=", label), ("company_id", "=", company.id)]
+            domain: list[Any] = [("name", "=", label)]
+            if has_company:
+                domain.append(("company_id", "=", company.id))
             existing = Group.search(domain, limit=1)
             if existing:
                 groups[jtype] = existing
                 continue
             vals: dict[str, Any] = {
                 "name": label,
-                "company_id": company.id,
                 "sequence": _JURISDICTION_SEQUENCE.get(jtype, 99),
             }
-            # Odoo 17+ added country_id on account.tax.group too.
-            if "country_id" in Group._fields and us:
+            if has_company:
+                vals["company_id"] = company.id
+            if has_country and us:
                 vals["country_id"] = us.id
             groups[jtype] = Group.create(vals)
         return groups

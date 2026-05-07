@@ -1,28 +1,31 @@
 # opensalestax-odoo
 
+[![PyPI](https://img.shields.io/pypi/v/odoo-addon-account-ostax?label=PyPI)](https://pypi.org/project/odoo-addon-account-ostax/)
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](LICENSE)
 [![Odoo 16.0](https://img.shields.io/badge/Odoo-16.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/16.0)
 [![Odoo 17.0](https://img.shields.io/badge/Odoo-17.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/17.0)
 [![Odoo 18.0](https://img.shields.io/badge/Odoo-18.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0)
+[![Odoo 19.0](https://img.shields.io/badge/Odoo-19.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/19.0)
 
 **Destination-based US sales tax for Odoo Community.** Replaces static tax-rate
 configuration with live calculation against an
 [OpenSalesTax](https://github.com/ejosterberg/open-sales-tax) engine — your own
 self-hosted instance, no per-transaction fees, no SaaS lock-in.
 
-The free, self-hostable answer to Avalara on Odoo Community.
+The free, self-hostable answer to Avalara on Odoo Community Edition. Available
+on **all four current Odoo major versions** — 16.0, 17.0, 18.0, and 19.0 — same
+module, branch-per-version per the OCA convention.
 
 ## Branch matrix
 
-This repo follows the OCA convention: **one branch per Odoo major version.**
 Pick the branch matching your Odoo install. Releases are independent per branch.
 
-| Odoo version | Branch | PyPI artifact |
-|---|---|---|
-| 16.0 | [`16.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/16.0) | `odoo-addon-account-ostax==16.0.*` |
-| 17.0 | [`17.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/17.0) | `odoo-addon-account-ostax==17.0.*` |
-| 18.0 | [`18.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0) | `odoo-addon-account-ostax==18.0.*` |
-| 19.0 | _planned for v0.2 at GA (~Oct 2026)_ | — |
+| Odoo version | Branch | PyPI artifact | Status |
+|---|---|---|---|
+| 16.0 | [`16.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/16.0) | [`odoo-addon-account-ostax==16.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
+| 17.0 | [`17.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/17.0) | [`odoo-addon-account-ostax==17.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
+| 18.0 | [`18.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0) | [`odoo-addon-account-ostax==18.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping (default) |
+| 19.0 | [`19.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/19.0) | [`odoo-addon-account-ostax==19.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping (Odoo 19 GA confirmed) |
 
 ## What you get
 
@@ -80,24 +83,37 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-**18.0 branch — `v0.1.0` shipped 2026-05-06.** Production-grade.
+**Production-grade across all four Odoo majors.** v0.1.5+ is shipping
+on PyPI as `odoo-addon-account-ostax==<branch>.0.1.5` for 16.0,
+17.0, 18.0, and 19.0.
 
-The release closes the alpha gap: invoice tax replacement on Odoo 18
-now works end-to-end via the canonical `_add_tax_details_in_base_lines`
-hook. A merchant deploying this gets correct destination-based US
-sales tax on every customer invoice, credit note, and sale order,
-with per-jurisdiction tax lines (state / county / city / district)
-visible on the form and engine audit JSON in the OpenSalesTax tab.
+What works on every branch:
 
-Verified end-to-end on Odoo 18 + Postgres 16 + l10n_generic_coa:
-$100 invoice to MSP (ZIP 55401) produces `amount_tax=9.03` with
-6 jurisdiction lines. Refunds sign-flip correctly. 32 unit tests
-pass.
+- Real destination-based per-jurisdiction US sales tax on every
+  customer invoice, sale order, credit note (state / county / city /
+  district splits in the totals area)
+- Engine audit JSON captured on `_post()` (engine version, calc
+  timestamp, full per-jurisdiction detail)
+- Customer exemption certificate handling
+- Multi-company isolation
+- Settings page + Test Connection action
+- Optional admin debug log
+- Optional 90-day archive cron for jurisdictions you've stopped
+  shipping to
 
-17.0, 16.0, and 19.0 branches follow this same pattern (with
-version-appropriate adjustments).
+How it's wired:
 
-Production use case: the maintainer's own Odoo 16 install (currently
-mid-migration to Odoo 19 + PostgreSQL on Debian 13 — see the
-sibling project) will run this connector on the matching branch
-once migration completes.
+- **Odoo 18 + 19** override `account.tax._add_tax_details_in_base_lines`
+  using the official `manual_tax_amounts` injection mechanism — same
+  hook the proprietary Avalara module uses, no internal-API
+  fragility.
+- **Odoo 16 + 17** override the legacy `compute_all` method (the new
+  batch engine arrived in 18.0).
+- Per-version settings xpath: 16 uses `//div[@data-key='account']`;
+  17/18/19 use `//app[@name='account']`.
+
+Verified end-to-end on real Odoo + Postgres in Docker against the
+live engine, including Odoo's official US chart of accounts
+(`l10n_us`): $100 invoice to MSP (ZIP 55401) produces
+`amount_tax=9.03` with 6 per-jurisdiction lines. 32 unit tests pass
+on each branch.
