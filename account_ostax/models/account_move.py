@@ -148,24 +148,78 @@ class AccountMove(models.Model):
             return
 
         with company._ostax_client() as client:
+            engine_version = ""
+            try:
+                health = client.health()
+                engine_version = getattr(health, "version", "") or ""
+            except Exception as e:  # noqa: BLE001
+                # Health check is best-effort metadata; don't block capture.
+                _logger.debug("OST health() check failed during capture: %s", e)
             result = client.calculate(address=address, line_items=items)
 
-        breakdown = self._ostax_serialize_result(result)
+        breakdown = self._ostax_serialize_result(result, engine_version=engine_version)
         self.write(
             {
                 "ostax_breakdown": json.dumps(breakdown, sort_keys=True, default=str),
-                "ostax_engine_version": breakdown.get("engine_version") or "",
+                "ostax_engine_version": engine_version,
                 "ostax_calculated_at": fields.Datetime.now(),
             }
         )
 
+        # Phase 1a polish: replace the move's line-level tax_ids with the
+        # synthetic per-jurisdiction recordset so the line UI on the
+        # posted invoice shows OST jurisdictions instead of the catalog
+        # placeholder. Only runs at posting time (this method is called
+        # from _post()), so drafts retain the catalog assignment which
+        # is what triggers OST engagement.
+        try:
+            self._ostax_replace_line_tax_ids(company, result)
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                "OST line tax_ids replacement failed (non-fatal): %s", e
+            )
+
+    def _ostax_replace_line_tax_ids(self, company: Any, result: Any) -> None:
+        """Swap each line's persisted ``tax_ids`` for the synthetic OST recordset.
+
+        Idempotent: if the line already has only OST synthetic taxes,
+        no-op. Operates one line at a time to keep the engine call's
+        per-line jurisdictions aligned with the line they came from.
+        """
+        AccountTax = self.env["account.tax"]
+        # Group result.lines into a list aligned 1:1 with our taxable lines.
+        engine_lines = list(result.lines or [])
+        line_idx = 0
+        for line in self.invoice_line_ids:
+            if line.display_type in ("line_section", "line_note"):
+                continue
+            amount = Decimal(str(line.price_subtotal or 0))
+            if amount <= 0:
+                continue
+            if line_idx >= len(engine_lines):
+                break
+            engine_line = engine_lines[line_idx]
+            line_idx += 1
+            synthetic_by_key = AccountTax.sudo()._ostax_ensure_synthetic_taxes(
+                company, engine_line.jurisdictions
+            )
+            synth_ids = [
+                synthetic_by_key[(j.name, j.type)].id
+                for j in engine_line.jurisdictions
+            ]
+            if not synth_ids:
+                continue
+            current_ids = sorted(line.tax_ids.ids)
+            if current_ids == sorted(synth_ids):
+                continue  # already converted
+            line.tax_ids = [(6, 0, synth_ids)]
+
     @staticmethod
-    def _ostax_serialize_result(result: Any) -> dict[str, Any]:
+    def _ostax_serialize_result(result: Any, engine_version: str = "") -> dict[str, Any]:
         return {
             "subtotal": str(result.subtotal),
             "tax_total": str(result.tax_total),
-            "engine_version": getattr(result, "engine_version", "")
-            or getattr(result, "version", ""),
+            "engine_version": engine_version,
             "lines": [
                 {
                     "amount": str(line.amount),
