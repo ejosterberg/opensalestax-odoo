@@ -43,7 +43,10 @@ jobs:
 
       - name: Install Python deps in the Odoo container
         run: |
-          pip install --break-system-packages --user opensalestax>=0.1.2
+          # Older pip on Odoo 16's image (Debian 11/12) doesn't recognize
+          # --break-system-packages. Try with the flag (newer pip);
+          # fall back to plain --user (older pip without PEP 668).
+          pip install --break-system-packages --user 'opensalestax>=0.1.2' 2>/dev/null             || pip install --user 'opensalestax>=0.1.2'
 
       - name: Install module + run tests
         env:
