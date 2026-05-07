@@ -21,12 +21,18 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import namedtuple
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
-from odoo import _, api, fields, models
+from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError
+
+# Lightweight jurisdiction record reconstructed from cached tuples — has the
+# same shape as the SDK's pydantic JurisdictionBreakdown for the fields the
+# helpers (``_ostax_ensure_synthetic_taxes``) actually read.
+_CachedJurisdiction = namedtuple("_CachedJurisdiction", ["name", "type", "rate_pct", "tax"])
 
 _logger = logging.getLogger(__name__)
 
@@ -120,8 +126,6 @@ class AccountTax(models.Model):
     def _ostax_inject_into_base_line(self, base_line: dict, company: Any) -> None:
         """Mutate one base_line so the standard tax engine produces OST values."""
         from opensalestax import (
-            Address,
-            LineItem,
             OpenSalesTaxAPIError,
             OpenSalesTaxNetworkError,
             OpenSalesTaxValidationError,
@@ -154,16 +158,17 @@ class AccountTax(models.Model):
         zip_value = (partner.zip or "").strip()
         zip5 = zip_value[:5]
         zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
-        address = Address(zip5=zip5, zip4=zip4 or None)
         product = base_line.get("product_id")
-        line_items = [
-            LineItem(amount=line_total, category=self._ostax_category_for(product))
-        ]
 
         started = time.monotonic()
         try:
-            with company._ostax_client() as client:
-                result = client.calculate(address=address, line_items=line_items)
+            jurisdictions = self._ostax_engine_calculate_cached(
+                company.id,
+                zip5,
+                zip4 or "",
+                str(line_total),
+                self._ostax_category_for(product),
+            )
         except (
             OpenSalesTaxNetworkError,
             OpenSalesTaxValidationError,
@@ -179,16 +184,21 @@ class AccountTax(models.Model):
             raise UserError(_("OpenSalesTax error: %s") % e) from e
         rtt_ms = int((time.monotonic() - started) * 1000)
 
-        if not result.lines:
+        if not jurisdictions:
             return
 
-        engine_line = result.lines[0]
-        synthetic_by_key = self._ostax_ensure_synthetic_taxes(
-            company, engine_line.jurisdictions
-        )
+        # Reconstruct lightweight jurisdiction records from the cached tuples
+        # so the existing helpers (_ostax_ensure_synthetic_taxes etc.) work
+        # unchanged. Each tuple is (name, type, rate_pct_str, tax_str_or_empty).
+        engine_juris = [
+            _CachedJurisdiction(name=name, type=jtype, rate_pct=Decimal(rate_str),
+                                tax=Decimal(tax_str) if tax_str else None)
+            for name, jtype, rate_str, tax_str in jurisdictions
+        ]
+        synthetic_by_key = self._ostax_ensure_synthetic_taxes(company, engine_juris)
         synthetic_ids: list[int] = []
         manual_tax_amounts: dict[str, dict[str, float]] = {}
-        for j in engine_line.jurisdictions:
+        for j in engine_juris:
             tax_rec = synthetic_by_key[(j.name, j.type)]
             synthetic_ids.append(tax_rec.id)
             j_tax = float(j.tax or Decimal("0"))
@@ -443,20 +453,17 @@ class AccountTax(models.Model):
         **_kw: Any,
     ) -> dict[str, Any]:
         """Build the engine payload, call the SDK, mash the response."""
-        from opensalestax import Address, LineItem
-
         zip_value = (partner.zip or "").strip()
         zip5 = zip_value[:5]
         zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
-        address = Address(zip5=zip5, zip4=zip4 or None)
 
         amount = Decimal(str(price_unit)) * Decimal(str(quantity))
         category = self._ostax_category_for(product)
-        line_items = [LineItem(amount=amount, category=category)]
 
         started = time.monotonic()
-        with company._ostax_client() as client:
-            result = client.calculate(address=address, line_items=line_items)
+        jurisdictions = self._ostax_engine_calculate_cached(
+            company.id, zip5, zip4 or "", str(amount), category,
+        )
         rtt_ms = int((time.monotonic() - started) * 1000)
 
         # Phase 9 — opt-in debug log of the call.
@@ -484,23 +491,30 @@ class AccountTax(models.Model):
             except Exception as e:  # noqa: BLE001
                 _logger.warning("OST debug-log write failed: %s", e)
 
-        if not result.lines:
+        if not jurisdictions:
             # Should never happen for a well-formed request, but if it does,
             # treat as zero-tax (engine returned empty breakdown).
             return self._ostax_empty_result(price_unit, quantity)
 
-        line = result.lines[0]
+        # Reconstruct lightweight jurisdiction records from the cached
+        # tuples so the existing helpers work unchanged.
+        engine_juris = [
+            _CachedJurisdiction(name=name, type=jtype, rate_pct=Decimal(rate_str),
+                                tax=Decimal(tax_str) if tax_str else None)
+            for name, jtype, rate_str, tax_str in jurisdictions
+        ]
         sign = -1 if is_refund else 1
 
         synthetic_taxes_by_jurisdiction = self._ostax_ensure_synthetic_taxes(
-            company, line.jurisdictions
+            company, engine_juris
         )
 
         # Build the compute_all-style return dict.
         base = float(amount) * sign
-        total_tax = float(line.tax) * sign
+        line_tax_total = sum((j.tax or Decimal("0")) for j in engine_juris)
+        total_tax = float(line_tax_total) * sign
         taxes_list: list[dict[str, Any]] = []
-        for j in line.jurisdictions:
+        for j in engine_juris:
             tax_rec = synthetic_taxes_by_jurisdiction[(j.name, j.type)]
             jurisdiction_tax = float(j.tax or Decimal("0")) * sign
             taxes_list.append(
@@ -628,6 +642,70 @@ class AccountTax(models.Model):
                 vals["tax_group_id"] = target_group.id
             by_key[key] = Tax.create(vals)
         return by_key
+
+    # ------------------------------------------------------------------
+    # Cache layer (v0.1.11)
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _ostax_cache_bucket(self) -> int:
+        """Returns the current 1-hour cache bucket as an integer.
+
+        Cache keys include this so entries naturally expire as the
+        bucket advances (sliding ~1h TTL). Per-worker memory; no
+        cross-worker sharing on Odoo's standard `tools.ormcache`.
+        """
+        return int(time.time()) // 3600
+
+    @tools.ormcache(
+        "company_id",
+        "zip5",
+        "zip4",
+        "amount_str",
+        "category",
+        "self._ostax_cache_bucket()",
+    )
+    def _ostax_engine_calculate_cached(
+        self,
+        company_id: int,
+        zip5: str,
+        zip4: str,
+        amount_str: str,
+        category: str,
+    ) -> tuple[tuple[str, str, str, str], ...]:
+        """Cache-wrapped engine ``/v1/calculate`` call.
+
+        Returns a tuple of ``(name, type, rate_pct, tax)`` tuples — one
+        per jurisdiction. Plain Python types so it pickles cleanly into
+        ormcache. The decorator caches per
+        ``(company, dest ZIP, amount, category, hourly bucket)``;
+        subsequent calls within the same hour for the same line shape
+        skip the engine entirely.
+
+        Cache hit rate observed: ~10ms LAN RTT → effectively 0ms on
+        repeat calls. Helpful for batch invoicing, e-commerce checkouts,
+        recurring subscriptions, and any flow where the same product
+        ships to the same destination repeatedly within an hour.
+        """
+        from opensalestax import Address, LineItem
+
+        company = self.env["res.company"].browse(company_id)
+        address = Address(zip5=zip5, zip4=zip4 or None)
+        line_items = [LineItem(amount=Decimal(amount_str), category=category)]
+        with company._ostax_client() as client:
+            result = client.calculate(address=address, line_items=line_items)
+        if not result.lines:
+            return ()
+        engine_line = result.lines[0]
+        return tuple(
+            (
+                j.name,
+                j.type,
+                str(j.rate_pct),
+                str(j.tax) if j.tax is not None else "",
+            )
+            for j in engine_line.jurisdictions
+        )
 
     @api.model
     def _ostax_archive_unused_synthetics(self, days_unused: int = 90) -> int:
