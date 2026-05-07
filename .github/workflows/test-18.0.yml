@@ -43,8 +43,7 @@ jobs:
 
       - name: Install Python deps in the Odoo container
         run: |
-          pip install --break-system-packages opensalestax==0.1.0 || \
-            pip install --user opensalestax==0.1.0
+          pip install --break-system-packages --user opensalestax>=0.1.2
 
       - name: Install module + run tests
         env:
