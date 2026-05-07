@@ -6,136 +6,318 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and per-branch versions follow Odoo's manifest convention
 `<odoo-major>.<odoo-minor>.<module-major>.<module-minor>.<module-patch>`.
 
-Each branch has its own release line.
+Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
+(e.g. `18.0-v0.1.15`). The notes below cover all four branches
+unless a version is branch-specific.
 
-## [Unreleased] — 18.0 branch
+## [v0.1.16] — 2026-05-07
 
-(empty — all work to date shipped under [18.0-v0.1.0].)
+### Changed
 
-## [18.0-v0.1.0] — 2026-05-06
+- Documentation pass: `README.md` rewritten to describe the
+  v0.1.11 cache layer, v0.1.13 per-product OST tax-category
+  field, v0.1.14 per-category default with parent-walk
+  inheritance, v0.1.15 vendor-bill bypass, and current test
+  count (49 unit tests on each branch).
+- `CHANGELOG.md` backfilled with entries for v0.1.1 through
+  v0.1.15. The per-branch `[Unreleased]` sections previously
+  said "Backport scheduled after 18.0 v0.1.0 ships" even though
+  16/17/19 had been shipping for hours; cleaned that up.
 
-> **Stable.** Closes the architectural gap from alpha.1: invoice tax
-> replacement on Odoo 18 now works end-to-end. A merchant deploying
-> this gets correct destination-based US sales tax on every customer
-> invoice, credit note, and sale order.
+No code changes. PyPI description on
+<https://pypi.org/project/odoo-addon-account-ostax/> updates
+to reflect current capabilities.
+
+## [v0.1.15] — 2026-05-07
+
+### Fixed
+
+- **Vendor bills no longer produce nonsensical tax numbers.**
+  v0.1.0–v0.1.14 engaged the engine on any line with a
+  US-located partner — including vendor bills, where the partner
+  is the *vendor*, not the buyer. The engine call used the
+  vendor's ZIP, computing tax at the vendor's location instead
+  of the buyer's. Two defensive gates added: `compute_all`
+  bypasses when `self.type_tax_use != 'sale'`;
+  `_ostax_inject_into_base_line` (Odoo 18+) bypasses when the
+  line's `record.move_id.move_type` starts with `in_`. Vendor
+  bills now fall through to Odoo's standard catalog rates until
+  v0.2 ships proper use-tax accrual at the buyer's location.
 
 ### Added
 
-- **Override `AccountTax._add_tax_details_in_base_lines`** — the
-  Odoo 18 batch tax engine entry point. For each base line that
-  engages OST (US partner with valid 5-digit ZIP, USD currency,
-  OST-enabled company, non-exempt partner): replaces
-  `base_line['tax_ids']` with per-jurisdiction synthetic taxes and
-  populates `base_line['manual_tax_amounts']` with engine-returned
-  amounts. Odoo's standard tax engine then uses those amounts
-  directly (the official bypass for external tax computation).
-- **Multi-currency safety:** non-USD lines fall through to catalog
-  rates. The engine is USD-only by design (engine constitution §5).
-- **Verified end-to-end on Odoo 18 + Postgres 16 + l10n_generic_coa:**
-  $100 invoice to ZIP 55401 produces `amount_tax=9.03`
-  (engine-correct) with 6 per-jurisdiction tax lines visible on the
-  move. Refunds (`out_refund`) sign-flip via Odoo's standard refund
-  flow, preserving the OST breakdown.
-- 32 unit tests still pass after the new override.
+- 4 new tests covering both bypass paths and regression-guards
+  confirming sales-tax flows still engage. Total: **49 unit
+  tests on each branch.**
 
-### Why this matters
+## [v0.1.14] — 2026-05-07
 
-Pre-1.0 alpha could only capture audit metadata; the move's
-`amount_tax` still reflected whatever catalog rate was on the line.
-This release replaces it with the engine result. Merchants now get:
+### Added
 
-- Correct destination-based tax on every customer invoice
-- Per-jurisdiction tax lines visible on the form (state, county, city,
-  district splits) — what tax authorities want to see in reporting
-- Audit JSON in the OpenSalesTax notebook tab for compliance
-- Same gates and fail-soft policy as the legacy `compute_all` path
+- **Per-category OST tax-category default with parent-walk
+  inheritance.** New `product.category.ostax_category` Selection
+  field (no default — unset means "inherit from parent"). The
+  lookup walks up `parent_id` until it finds a value, then falls
+  back to `"general"`. Closest-ancestor wins; cycle-safe (tracks
+  seen IDs).
+- View extension surfaces the field on `product.category` after
+  `parent_id`.
+- Eliminates per-product setup for merchants with well-organized
+  catalogs: mark "Apparel" as `clothing` once → cascades to every
+  product underneath unless an intermediate node sets its own
+  value.
+- 6 new tests covering inheritance, parent-chain walking,
+  override precedence.
 
-The legacy `compute_all` override remains in place — it covers
-direct programmatic calls (e.g., from custom modules) and is the
-primary tax hook on the 16.0 / 17.0 branches.
+### Changed
 
-## [18.0-v0.1.0-alpha.1] — 2026-05-06
+- `_ostax_category_for(product)` lookup precedence now:
+  1. `product.product_tmpl_id.ostax_category` (per-product
+     override, v0.1.13)
+  2. Closest-ancestor `product.category.ostax_category` (walks
+     `parent_id`, v0.1.14)
+  3. Fall back to `"general"`
 
-> **Alpha scope.** This release ships the full module foundation,
-> settings + connection test, audit-trail breakdown capture, and
-> direct programmatic OST integration. **Invoice tax replacement on
-> Odoo 18 is NOT yet wired** — see "Known limitations" below. Direct
-> calls to `account.tax.compute_all(...)` work as expected; the
-> breakdown JSON captured on `account.move._post()` reflects what OST
-> would compute, even when Odoo applies its catalog rate to the move.
-> Production-ready invoice tax replacement targets the v0.1.0 stable
-> release.
+## [v0.1.13] — 2026-05-07
+
+### Added
+
+- **Per-product OST tax-category mapping.** New
+  `product.template.ostax_category` Selection field with engine-
+  aligned options: `general` (default), `clothing`, `groceries`,
+  `prescription_drugs`, `prepared_food`, `digital_goods`. The
+  engine applies per-state taxability rules based on the chosen
+  category (Minnesota exempts clothing, New York taxes prepared
+  food differently than groceries, etc.).
+- View extension on the product form's Accounting tab, right
+  after the existing Customer Taxes field.
+- 7 new tests including a contract-pinning check that fails if
+  the engine and addon's category lists drift.
+
+### Changed
+
+- `_ostax_category_for(product)` reads
+  `product.product_tmpl_id.ostax_category`; falls back to
+  `"general"`. Defensive against `None`, unset, and templates
+  passed directly.
+
+## [v0.1.12] — 2026-05-07
+
+### Fixed
+
+- **Odoo 16 module load no longer fails with `SyntaxError`.**
+  Odoo 16's `tools.ormcache` builds its key-extraction lambda by
+  stringifying the wrapped function's `inspect.signature` without
+  stripping annotations. Combined with this module's
+  `from __future__ import annotations`, the parameter annotations
+  became string literals (e.g. `'int'`), producing a malformed
+  lambda. Stripped the annotations from
+  `_ostax_engine_calculate_cached`. Odoo 17/18/19 are tolerant
+  (their `cache.py` strips annotations first).
+- Cross-version `Registry.clear_cache()` (Odoo 17+) /
+  `clear_caches()` (Odoo 16) probe in the test base class so the
+  same code runs on all four branches.
+
+### Migration note
+
+- The 16.0.0.1.11 wheel on PyPI is broken (won't install on
+  Odoo 16). Anyone pinning to that exact version should upgrade
+  to **16.0.0.1.12 or later**.
+
+## [v0.1.11] — 2026-05-07
+
+### Added
+
+- **Per-worker engine-response cache (`tools.ormcache`).** Wraps
+  the engine `/v1/calculate` call in a cache-decorated helper
+  keyed by `(company_id, zip5, zip4, line amount, category,
+  hourly bucket)`. Repeat calculations within the same hour for
+  the same line shape skip the engine entirely — useful for
+  batch invoicing, recurring orders, multi-line carts, and any
+  flow that re-prices the same product to the same destination
+  repeatedly. ~1 hour sliding TTL via the hourly-bucket key
+  component (no manual invalidation).
+- Wired into both call paths: batch-engine
+  (`_ostax_inject_into_base_line`, used on Odoo 18+) and legacy
+  `compute_all` (used on Odoo 16/17).
+- Tests clear `env.registry.clear_cache()` in `setUp` so
+  `assert_called_once` mocks remain accurate per-test.
+- Per-worker memory; multi-worker deployments get one cache per
+  worker (acceptable: engine remains the source of truth, cache
+  is just a local optimization).
+
+## [v0.1.10] — 2026-05-07
+
+### Fixed
+
+- **CI fix:** `pip install --break-system-packages` fallback
+  for older pip on Debian 11/12 (Odoo 16/17 images). Odoo 18+
+  Debian images ship a newer pip that requires the flag (PEP
+  668); Odoo 16/17 images ship an older pip that doesn't
+  recognize it. Shell-level `||` fallback in the install step.
+
+## [v0.1.9] — 2026-05-07
+
+### Added
+
+- **Line-level OST jurisdiction tags persisted on posted
+  invoices.** Previously the totals area showed correct
+  per-jurisdiction tax amounts, but the line-level tax tag
+  still showed the catalog placeholder ("Tax 9.025%" or
+  similar). Now the synthetic OST jurisdiction names appear
+  directly on the line ("OST · Minnesota (state)", etc.).
+- Implementation: writes during the draft phase via
+  `base_line['record']` back-reference (posted move lines are
+  immutable); idempotent so the recompute it triggers doesn't
+  loop.
+
+## [v0.1.8] — 2026-05-07
+
+### Added
+
+- **Per-branch test workflows for 16/17/18/19.** Previously only
+  18 had dedicated CI; now each branch has its own
+  `Test <NN.0>` workflow on push/PR. Matrix uses Postgres 15 for
+  16/17 and Postgres 16 for 18/19.
+
+## [v0.1.7] — 2026-05-07
+
+### Fixed
+
+- **Module install no longer fails on Odoo 18 + 19 due to
+  removed cron fields.** `numbercall` and `doall` were dropped
+  from `ir.cron` in Odoo 18+. Removed both from
+  `data/ostax_cron.xml` (defaults are sensible).
+
+## [v0.1.6] — 2026-05-07
+
+### Added
+
+- README rewritten to mark all 4 branches as shipping (PyPI
+  description now reflects 19.0 GA).
+
+### Fixed
+
+- Defensive `account.tax.group.company_id` field guard for
+  Odoo 16 (the field doesn't exist there). Cured 10 test
+  errors.
+- CI install on Odoo 18 image: added `--break-system-packages`
+  to the pip command (PEP 668 was rejecting installs on the
+  newer Debian).
+
+## [v0.1.5] — 2026-05-07
+
+### Added
+
+- Optional `ir.cron` to soft-archive synthetic OST taxes
+  unused for 90+ days (`active=False`; reactivates on next
+  calc to that jurisdiction). Off by default — merchants who
+  don't want it can leave the cron disabled.
+- `engine_version` is now captured via `client.health()` and
+  stamped on the breakdown JSON at `_post()` time.
+
+## [v0.1.4] — 2026-05-07
+
+### Changed
+
+- Settings page rewritten to use the modern Odoo 18
+  `<setting>` blocks with help text per option. Cross-version
+  xpath: 16 uses `//div[@data-key='account']`; 17/18/19 use
+  `//app[@name='account']`.
+
+## [v0.1.3] — 2026-05-07
+
+### Fixed
+
+- **"Tax 15%" no longer appears in the totals area.** v0.1.0–
+  v0.1.2 created synthetic OST taxes without a `tax_group_id`,
+  causing the chart's default "Tax 15%" group to be used as
+  the heading. v0.1.3 creates per-type tax groups
+  (`OpenSalesTax — State / County / City / District`) on first
+  use and assigns the matching group to each synthetic tax.
+
+## [v0.1.2] — 2026-05-06
+
+### Added
+
+- First PyPI release. Initial Trusted-Publishing (OIDC) setup
+  via GitHub Actions; `Publish to PyPI` workflow triggered on
+  `<NN.0>-v*` tag push.
+
+## [v0.1.0] — 2026-05-06
+
+> **Stable.** Closes the architectural gap from v0.1.0-alpha.1:
+> invoice tax replacement on Odoo 18 now works end-to-end.
+
+### Added
+
+- **Override `AccountTax._add_tax_details_in_base_lines`** —
+  the Odoo 18 batch tax engine entry point. For each base line
+  that engages OST (US partner with valid 5-digit ZIP, USD
+  currency, OST-enabled company, non-exempt partner): replaces
+  `base_line['tax_ids']` with per-jurisdiction synthetic taxes
+  and populates `base_line['manual_tax_amounts']` with engine-
+  returned amounts. Odoo's standard tax engine then uses those
+  amounts directly (the official bypass for external tax
+  computation).
+- **Multi-currency safety:** non-USD lines fall through to
+  catalog rates. The engine is USD-only by design (engine
+  constitution §5).
+- **Verified end-to-end on Odoo 18 + Postgres 16 +
+  l10n_generic_coa:** $100 invoice to ZIP 55401 produces
+  `amount_tax=9.03` (engine-correct) with 6 per-jurisdiction
+  tax lines visible on the move. Refunds (`out_refund`)
+  sign-flip via Odoo's standard refund flow, preserving the
+  OST breakdown.
+- 32 unit tests pass.
+
+## [v0.1.0-alpha.1] — 2026-05-06
+
+> **Alpha scope.** This release ships the full module
+> foundation, settings + connection test, audit-trail
+> breakdown capture, and direct programmatic OST integration.
+> **Invoice tax replacement on Odoo 18 is NOT yet wired** —
+> see "Known limitations" below.
 
 ### Added
 
 - Initial scaffold for the `account_ostax` module on Odoo 18.0
 - LGPL-3 license (constitution §3 carve-out)
-- OCA-style file layout (`account_ostax/` with `models/`, `views/`,
-  `security/`, `readme/`, `migrations/`)
+- OCA-style file layout (`account_ostax/` with `models/`,
+  `views/`, `security/`, `readme/`, `migrations/`)
 - Repo-root scaffolding: README, CONTRIBUTING (DCO), SECURITY,
   CHANGELOG, SECURITY-REVIEW
-- **Phase 3 — Settings page + connection test:** 8 per-company OST
-  fields, settings panel under Settings → Accounting, Test
-  Connection button surfacing engine version + DB status + RTT
-- **Phase 4 — `compute_all` override:** engages the engine for US
-  partners with a valid 5-digit ZIP, replaces the catalog rate with
-  a per-jurisdiction breakdown, materializes one synthetic
-  `account.tax` record per `(company × name × type)` on first
-  encounter, sign-flips on `is_refund=True`. Fail-soft is
-  config-driven; 4xx errors always surface as `UserError`.
-  Works for direct programmatic use (`tax.compute_all(...)`).
+- **Phase 3 — Settings page + connection test:** 8 per-company
+  OST fields, settings panel under Settings → Accounting,
+  Test Connection button surfacing engine version + DB status
+  + RTT
+- **Phase 4 — `compute_all` override:** engages the engine for
+  US partners with a valid 5-digit ZIP, replaces the catalog
+  rate with a per-jurisdiction breakdown, materializes one
+  synthetic `account.tax` record per `(company × name × type)`
+  on first encounter, sign-flips on `is_refund=True`. Fail-soft
+  is config-driven; 4xx errors always surface as `UserError`.
 - **Phase 5 — Breakdown audit capture:** `account.move._post()`
-  hook records per-jurisdiction breakdown JSON + calc timestamp on
-  every move that engages OST. Manual "Recompute Breakdown" button
-  on draft moves. Form-view notebook tab surfacing the audit data.
+  hook records per-jurisdiction breakdown JSON + calc timestamp
+  on every move that engages OST. Manual "Recompute Breakdown"
+  button on draft moves. Form-view notebook tab surfacing the
+  audit data.
 - **Phase 7 — Exemption short-circuit:** `res.partner` extension
-  with certificate / use-code / expiry. Exempt partners skip the
-  engine and produce zero tax (engine API doesn't accept exemption
-  fields yet — merchant-tracked).
+  with certificate / use-code / expiry. Exempt partners skip
+  the engine and produce zero tax (engine API doesn't accept
+  exemption fields yet — merchant-tracked).
 - **Phase 9 — Opt-in debug log:** `ostax.calc.log` ring-buffer
   (50 entries per company) of engine calls; admin-viewable.
 
 ### Tested
 
-- 32 unit tests on Odoo 18 + Postgres 16 in Docker on Proxmox VM 910
+- 32 unit tests on Odoo 18 + Postgres 16 in Docker
   (Phase 3, 4, 7, 9 all green)
-- Live integration against engine v0.54.1: $100 line to ZIP 55401
-  → 6 jurisdictions, total $9.025; refund flips signs; exempt
-  partner short-circuits to zero tax
-- Phase 5 capture verified on a real account.move: posting writes
-  the full 6-jurisdiction breakdown JSON to `ostax_breakdown`
-
-### Known limitations (v0.1.0-alpha)
-
-- **Invoice tax replacement on Odoo 18 doesn't fire.** Odoo 18
-  invoices use the new batch tax engine
-  (`AccountTax._add_tax_details_in_base_lines()` driven from
-  `account.move._get_rounded_base_and_tax_lines()`), bypassing the
-  `compute_all` override. The audit breakdown captures correctly,
-  but the move's actual `amount_tax` reflects whatever catalog tax
-  was assigned to the line. **Implementing the proper override on
-  the new entry point is the v0.1.0 stable release's primary
-  task.** Tracked in ROADMAP.
-- **Vendor-side use-tax accrual deferred to v0.2.** v0.1 supports
-  customer-facing flows only (out_invoice, out_refund).
-- **POS live-quote (JS-side round-trip) deferred to v0.2.**
-  Server-authoritative compute on POS order close inherits the
-  same Phase 4 limitation as invoices on 18.0.
-- **No cache.** Engine call on every compute. v0.2 adds
-  `tools.ormcache` for the rate stack.
-- **Engine version not captured in breakdown JSON** — the SDK's
-  `CalculationResult` doesn't expose it (it lives on `health()`).
-  Cosmetic; v0.2 adds a separate health-stamp on capture.
+- Live integration against engine v0.54.1: $100 line to ZIP
+  55401 → 6 jurisdictions, total $9.025; refund flips signs;
+  exempt partner short-circuits to zero tax
 
 ### Engine compatibility
 
 Tested against OpenSalesTax engine v0.54.1. Pin in production:
 v0.22 minimum (pre-v0.22 had the SD-state-bleed bug).
-
-## [Unreleased] — 17.0 branch
-
-(Backport scheduled after 18.0 v0.1.0 ships.)
-
-## [Unreleased] — 16.0 branch
-
-(Backport scheduled after 17.0 v0.1.0 ships.)
