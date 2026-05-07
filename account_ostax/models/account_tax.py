@@ -666,14 +666,17 @@ class AccountTax(models.Model):
         "self._ostax_cache_bucket()",
     )
     def _ostax_engine_calculate_cached(
-        self,
-        company_id: int,
-        zip5: str,
-        zip4: str,
-        amount_str: str,
-        category: str,
-    ) -> tuple[tuple[str, str, str, str], ...]:
+        self, company_id, zip5, zip4, amount_str, category,
+    ):
         """Cache-wrapped engine ``/v1/calculate`` call.
+
+        Note: signature has no type annotations because Odoo 16's
+        ``tools.ormcache`` stringifies the function signature into a
+        key-builder lambda without stripping annotations. With
+        ``from __future__ import annotations`` in this module the
+        annotations become strings (e.g. ``'int'``) which break the
+        lambda's syntax. 17/18/19 are tolerant; 16 is not. Untyped
+        signature works on all four.
 
         Returns a tuple of ``(name, type, rate_pct, tax)`` tuples — one
         per jurisdiction. Plain Python types so it pickles cleanly into
