@@ -32,8 +32,14 @@ class OstaxTestCase(TransactionCase):
         # bucket, so identical fixtures across tests within the same
         # hour would let the second test get a cache hit and break
         # ``assert_called_once`` style mocks. Clear before every test
-        # so each one sees a cold cache.
-        self.env.registry.clear_cache()
+        # so each one sees a cold cache. ``clear_cache`` (singular)
+        # was introduced in Odoo 17; 16 only has ``clear_caches``
+        # (plural).
+        registry = self.env.registry
+        if hasattr(registry, "clear_cache"):
+            registry.clear_cache()
+        else:
+            registry.clear_caches()
 
     @staticmethod
     def _patch_health(status: str = "ok", version: str = "0.54.1") -> object:
