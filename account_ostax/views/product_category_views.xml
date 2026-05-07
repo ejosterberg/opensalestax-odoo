@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+<odoo>
+    <record id="view_product_category_form_ostax" model="ir.ui.view">
+        <field name="name">product.category.form.inherit.ostax</field>
+        <field name="model">product.category</field>
+        <field name="inherit_id" ref="product.product_category_form_view"/>
+        <field name="arch" type="xml">
+
+            <!-- Add OST category default after the parent_id selector
+                 — the "where this category sits in the tree" area is
+                 the natural neighbour for inheritance-driven defaults. -->
+            <xpath expr="//field[@name='parent_id']" position="after">
+                <field name="ostax_category"
+                       widget="selection"
+                       help="Default OST tax category for products in this internal category. Per-product values override this. If unset, the parent category's value is used (walked up to the root)."/>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>

@@ -538,17 +538,41 @@ class AccountTax(models.Model):
     def _ostax_category_for(product: Any) -> str:
         """Map an Odoo product to an OST tax category.
 
-        Reads ``product.product_tmpl_id.ostax_category`` (added in
-        v0.1.13). Falls back to ``"general"`` if the product is None,
-        the field is unset, or the product model doesn't carry the
-        field for some reason (defensive — older databases that haven't
-        run the v0.1.13 migration yet).
+        Lookup precedence:
+
+        1. ``product.product_tmpl_id.ostax_category`` — per-product override
+           (added v0.1.13).
+        2. ``product.product_tmpl_id.categ_id.ostax_category`` — internal
+           category default; walks up ``parent_id`` until a value is found
+           (added v0.1.14).
+        3. ``"general"`` — final fallback.
+
+        Defensive against:
+        - ``product`` is None / falsy → returns "general"
+        - ``product`` is a ``product.template`` (not a variant) → use directly
+        - DBs without the field → ``getattr`` returns None, falls through
         """
         if not product:
             return "general"
         template = getattr(product, "product_tmpl_id", None) or product
-        category = getattr(template, "ostax_category", None)
-        return category or "general"
+
+        # 1) Per-product override
+        explicit = getattr(template, "ostax_category", None)
+        if explicit:
+            return explicit
+
+        # 2) Internal-category default, walking up the parent chain
+        category = getattr(template, "categ_id", None)
+        seen: set[int] = set()
+        while category and getattr(category, "id", 0) not in seen:
+            seen.add(category.id)
+            cat_value = getattr(category, "ostax_category", None)
+            if cat_value:
+                return cat_value
+            category = getattr(category, "parent_id", None) or None
+
+        # 3) Final fallback
+        return "general"
 
     def _ostax_empty_result(self, price_unit: float, quantity: float) -> dict[str, Any]:
         base = price_unit * quantity
