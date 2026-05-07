@@ -26,6 +26,15 @@ class OstaxTestCase(TransactionCase):
         )
         cls.us_country = cls.env.ref("base.us")
 
+    def setUp(self) -> None:
+        super().setUp()
+        # The engine-response cache (v0.1.11) is keyed by an hourly
+        # bucket, so identical fixtures across tests within the same
+        # hour would let the second test get a cache hit and break
+        # ``assert_called_once`` style mocks. Clear before every test
+        # so each one sees a cold cache.
+        self.env.registry.clear_cache()
+
     @staticmethod
     def _patch_health(status: str = "ok", version: str = "0.54.1") -> object:
         """Return a context manager that patches OpenSalesTaxClient.health()."""
