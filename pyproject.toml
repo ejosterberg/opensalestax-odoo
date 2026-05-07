@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "odoo-addon-account-ostax"
-version = "18.0.0.1.12"
+version = "18.0.0.1.13"
 description = "OpenSalesTax connector for Odoo 18 — destination-based US sales tax via the OpenSalesTax engine"
 readme = "README.md"
 license = "LGPL-3.0-or-later"
