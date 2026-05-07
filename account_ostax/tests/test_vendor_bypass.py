@@ -15,9 +15,16 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import patch
 
+from odoo.release import version_info
 from odoo.tests.common import tagged
 
 from .common import OstaxTestCase
+
+# Odoo 16/17 don't have the batch tax engine. Our override defensively
+# defines ``_add_tax_details_in_base_lines`` on every branch (it
+# no-ops via super-getattr), so a hasattr check can't distinguish
+# branches; use the Odoo version directly.
+_HAS_BATCH_ENGINE = version_info[0] >= 18
 
 
 @tagged("post_install", "-at_install")
@@ -72,11 +79,9 @@ class TestBatchEngineInboundMoveBypass(OstaxTestCase):
         })
 
     def test_inbound_move_does_not_engage_engine(self) -> None:
-        Tax = self.env["account.tax"]
-        # Skip the test on Odoo 16/17 — they don't have the batch
-        # engine, so the bypass codepath is irrelevant.
-        if not hasattr(Tax, "_add_tax_details_in_base_lines"):
+        if not _HAS_BATCH_ENGINE:
             self.skipTest("Batch tax engine only exists on Odoo 18+")
+        Tax = self.env["account.tax"]
 
         # Build a minimal vendor bill base_line that LOOKS like one —
         # we exercise the gate inside ``_ostax_inject_into_base_line``
@@ -107,9 +112,9 @@ class TestBatchEngineInboundMoveBypass(OstaxTestCase):
 
     def test_outbound_move_still_engages(self) -> None:
         """Sanity: an out_invoice with the same shape DOES engage."""
-        Tax = self.env["account.tax"]
-        if not hasattr(Tax, "_add_tax_details_in_base_lines"):
+        if not _HAS_BATCH_ENGINE:
             self.skipTest("Batch tax engine only exists on Odoo 18+")
+        Tax = self.env["account.tax"]
 
         class _FakeMove:
             move_type = "out_invoice"
