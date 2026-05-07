@@ -200,6 +200,34 @@ class AccountTax(models.Model):
         base_line["tax_ids"] = self.env["account.tax"].browse(synthetic_ids)
         base_line["manual_tax_amounts"] = manual_tax_amounts
 
+        # Persist the synthetic tax_ids on the source line so the line UI
+        # shows OST jurisdiction tags (e.g. "OST · Minnesota (state)") on
+        # the posted invoice instead of the catalog placeholder. Only on
+        # draft moves — Odoo's standard model rejects writes to posted
+        # move lines. Idempotent: only writes if the persisted set
+        # differs from the synthetic set, so the recompute that this
+        # write triggers won't loop (next iteration's set already
+        # matches).
+        record = base_line.get("record")
+        if record is not None and getattr(record, "_name", None) == "account.move.line":
+            move = record.move_id
+            if move and move.state == "draft":
+                try:
+                    persisted = sorted(record.tax_ids.ids)
+                    target = sorted(synthetic_ids)
+                    if persisted != target:
+                        record.with_context(
+                            check_move_validity=False,
+                            skip_invoice_sync=True,
+                            tracking_disable=True,
+                        ).sudo().tax_ids = [(6, 0, target)]
+                except Exception as e:  # noqa: BLE001
+                    _logger.warning(
+                        "OST: line tax_ids persistence skipped (%s); the "
+                        "totals area still shows the correct breakdown.",
+                        e,
+                    )
+
         if company.ostax_debug_log_enabled:
             try:
                 Log = self.env["ostax.calc.log"].sudo()
