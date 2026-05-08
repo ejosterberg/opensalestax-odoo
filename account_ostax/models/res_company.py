@@ -220,7 +220,14 @@ class ResCompany(models.Model):
             self._ostax_post_outage_activity(new_streak)
 
     def _ostax_post_outage_activity(self, streak: int) -> None:
-        """Post a mail.activity to each alert recipient. Best-effort."""
+        """Post a mail.activity to each alert recipient. Best-effort.
+
+        ``res.company`` doesn't carry ``mail.activity.mixin`` on
+        Odoo 16/17/18 (and inheriting it would require a registry
+        bump on existing installs), so create activity records
+        directly via ``self.env["mail.activity"]``. Same end result;
+        no schema impact.
+        """
         from datetime import timedelta as _timedelta
         try:
             warning_type = self.env.ref(
@@ -229,6 +236,9 @@ class ResCompany(models.Model):
             if not warning_type:
                 warning_type = self.env["mail.activity.type"].search([], limit=1)
             if not warning_type:
+                return
+            company_model = self.env["ir.model"].sudo()._get("res.company")
+            if not company_model:
                 return
             today = fields.Date.context_today(self)
             deadline = today + _timedelta(days=1)
@@ -245,14 +255,18 @@ class ResCompany(models.Model):
                 "t": self.ostax_failure_streak_threshold,
                 "url": self.ostax_api_url or "(unset)",
             }
+            Activity = self.env["mail.activity"].sudo()
             for user in self.ostax_admin_alert_recipient_ids:
-                self.sudo().activity_schedule(
-                    activity_type_id=warning_type.id,
-                    date_deadline=deadline,
-                    summary=summary,
-                    note=note,
-                    user_id=user.id,
-                )
+                Activity.create({
+                    "res_model": "res.company",
+                    "res_model_id": company_model.id,
+                    "res_id": self.id,
+                    "activity_type_id": warning_type.id,
+                    "date_deadline": deadline,
+                    "summary": summary,
+                    "note": note,
+                    "user_id": user.id,
+                })
         except Exception as e:  # noqa: BLE001
             _logger.warning(
                 "OST: failed to post engine-outage activity: %s", e
