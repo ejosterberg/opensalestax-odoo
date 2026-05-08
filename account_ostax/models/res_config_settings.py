@@ -37,6 +37,21 @@ class ResConfigSettings(models.TransientModel):
     ostax_debug_log_enabled = fields.Boolean(
         related="company_id.ostax_debug_log_enabled", readonly=False
     )
+    ostax_last_successful_calc_at = fields.Datetime(
+        related="company_id.ostax_last_successful_calc_at", readonly=True
+    )
+    ostax_failure_streak = fields.Integer(
+        related="company_id.ostax_failure_streak", readonly=True
+    )
+    ostax_failure_streak_threshold = fields.Integer(
+        related="company_id.ostax_failure_streak_threshold", readonly=False
+    )
+    ostax_admin_alert_recipient_ids = fields.Many2many(
+        related="company_id.ostax_admin_alert_recipient_ids", readonly=False
+    )
+    ostax_calc_count_today = fields.Integer(
+        related="company_id.ostax_calc_count_today", readonly=True
+    )
 
     def action_ostax_test_connection(self) -> dict[str, Any]:
         """Forward to the company-level connection test."""

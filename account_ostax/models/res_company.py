@@ -122,6 +122,153 @@ class ResCompany(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Operator-experience telemetry (v0.2.1)
+    # ------------------------------------------------------------------
+
+    ostax_last_successful_calc_at = fields.Datetime(
+        string="Last successful engine call",
+        readonly=True,
+        copy=False,
+        help=(
+            "Timestamp of the most recent successful engine call for "
+            "this company. Updated whenever the connector talks to "
+            "the engine and gets a usable response. A stale value "
+            "(or unset) means the engine hasn't been talking to this "
+            "company recently — useful when fail-soft is silently "
+            "falling back to catalog rates."
+        ),
+    )
+    ostax_failure_streak = fields.Integer(
+        string="Engine failure streak",
+        default=0,
+        readonly=True,
+        copy=False,
+        help=(
+            "Consecutive engine failures since the last success. "
+            "Resets to zero on next successful call. When this "
+            "crosses ``ostax_failure_streak_threshold``, the connector "
+            "posts a mail.activity to "
+            "``ostax_admin_alert_recipient_ids`` so silent fail-soft "
+            "doesn't go unnoticed."
+        ),
+    )
+    ostax_failure_streak_threshold = fields.Integer(
+        string="Alert threshold (consecutive failures)",
+        default=5,
+        help=(
+            "Post a mail.activity warning to admins after this many "
+            "consecutive engine failures. Default 5 catches genuine "
+            "outages without alerting on transient blips."
+        ),
+    )
+    ostax_admin_alert_recipient_ids = fields.Many2many(
+        "res.users",
+        relation="res_company_ostax_alert_recipients_rel",
+        column1="company_id",
+        column2="user_id",
+        string="Engine outage alert recipients",
+        help=(
+            "Users who receive a mail.activity warning when the "
+            "engine-failure streak crosses the threshold. Leave empty "
+            "to disable activity-based alerting (failures still "
+            "increment the streak counter and surface in the debug "
+            "log)."
+        ),
+    )
+    ostax_calc_count_today = fields.Integer(
+        string="Engine calls today",
+        compute="_compute_ostax_calc_count_today",
+        help=(
+            "Engine calls recorded in the debug log since midnight "
+            "(server timezone). Only populated when debug log is on; "
+            "0 otherwise."
+        ),
+    )
+
+    def _ostax_record_engine_success(self) -> None:
+        """Reset the failure streak and stamp the last-success time.
+
+        Called from the engine call site after a successful response.
+        Idempotent on the timestamp side; the streak reset only writes
+        when the value is non-zero, to avoid superfluous DB churn on
+        the common path.
+        """
+        self.ensure_one()
+        vals = {"ostax_last_successful_calc_at": fields.Datetime.now()}
+        if self.ostax_failure_streak:
+            vals["ostax_failure_streak"] = 0
+        self.sudo().write(vals)
+
+    def _ostax_record_engine_failure(self) -> None:
+        """Increment the failure streak; post an activity if threshold crossed.
+
+        Best-effort: if posting the activity fails (no admin
+        recipients configured, mail thread unavailable, etc.), log a
+        warning and continue. We never let telemetry-failure break the
+        calling tax-compute flow.
+        """
+        self.ensure_one()
+        new_streak = (self.ostax_failure_streak or 0) + 1
+        self.sudo().write({"ostax_failure_streak": new_streak})
+        threshold = self.ostax_failure_streak_threshold or 0
+        if (
+            threshold > 0
+            and new_streak == threshold  # post once per threshold-crossing
+            and self.ostax_admin_alert_recipient_ids
+        ):
+            self._ostax_post_outage_activity(new_streak)
+
+    def _ostax_post_outage_activity(self, streak: int) -> None:
+        """Post a mail.activity to each alert recipient. Best-effort."""
+        from datetime import timedelta as _timedelta
+        try:
+            warning_type = self.env.ref(
+                "mail.mail_activity_data_warning", raise_if_not_found=False
+            )
+            if not warning_type:
+                warning_type = self.env["mail.activity.type"].search([], limit=1)
+            if not warning_type:
+                return
+            today = fields.Date.context_today(self)
+            deadline = today + _timedelta(days=1)
+            summary = _("OpenSalesTax engine: %d consecutive failures") % streak
+            note = _(
+                "The OpenSalesTax engine for company %(co)s has failed "
+                "%(n)d consecutive calls (threshold: %(t)d). Tax "
+                "computation is currently falling back to catalog "
+                "rates (if fail-soft is on) or blocking (if off). "
+                "Investigate engine health at %(url)s."
+            ) % {
+                "co": self.name,
+                "n": streak,
+                "t": self.ostax_failure_streak_threshold,
+                "url": self.ostax_api_url or "(unset)",
+            }
+            for user in self.ostax_admin_alert_recipient_ids:
+                self.sudo().activity_schedule(
+                    activity_type_id=warning_type.id,
+                    date_deadline=deadline,
+                    summary=summary,
+                    note=note,
+                    user_id=user.id,
+                )
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                "OST: failed to post engine-outage activity: %s", e
+            )
+
+    def _compute_ostax_calc_count_today(self) -> None:
+        from datetime import datetime, time as _dt_time
+        Log = self.env["ostax.calc.log"].sudo()
+        today = fields.Date.context_today(self)
+        midnight = datetime.combine(today, _dt_time.min)
+        for rec in self:
+            rec.ostax_calc_count_today = Log.search_count([
+                ("company_id", "=", rec.id),
+                ("create_date", ">=", midnight),
+            ])
+
     def _ostax_client(self) -> Any:
         """Return an OpenSalesTaxClient for this company.
 
