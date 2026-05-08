@@ -56,14 +56,8 @@ class TestComputeAllUseTaxAccrual(OstaxTestCase):
             "country_id": self.us_country.id,
             "zip": "55401",
         })
-        # Use-tax payable account
-        self.use_tax_acct = self.env["account.account"].create({
-            "name": "OST Test - Use Tax Payable",
-            "code": "USETAXPAY01",
-            "account_type": "liability_current",
-            "company_id": self.company.id,
-        }) if "account_type" in self.env["account.account"]._fields else \
-            self.env["account.account"].search([("user_type_id.type", "=", "liability")], limit=1)
+        # Use-tax payable account (cross-version safe)
+        self.use_tax_acct = self._ostax_get_or_make_liability_account()
         self.purchase_tax = self.env["account.tax"].create(
             self._ostax_tax_vals(name="Vendor 7% purchase tax", amount=7.0)
         )
@@ -204,13 +198,7 @@ class TestBatchEngineUseTaxAccrual(OstaxTestCase):
             "country_id": self.us_country.id,
             "zip": "55401",
         })
-        self.use_tax_acct = self.env["account.account"].create({
-            "name": "OST Test - Use Tax Payable (batch)",
-            "code": "USETAXPAY02",
-            "account_type": "liability_current",
-            "company_id": self.company.id,
-        }) if "account_type" in self.env["account.account"]._fields else \
-            self.env["account.account"].search([("user_type_id.type", "=", "liability")], limit=1)
+        self.use_tax_acct = self._ostax_get_or_make_liability_account()
 
     def _make_inbound_base_line(self):
         Tax = self.env["account.tax"]
