@@ -91,6 +91,50 @@ class AccountMove(models.Model):
             },
         }
 
+    def action_ostax_bulk_recompute_drafts(self) -> dict[str, Any]:
+        """v0.2.1 — bulk recompute breakdown for all selected DRAFT moves.
+
+        Server action exposed under the Action menu on
+        ``account.move`` lists. Iterates the recordset, skips moves
+        that aren't draft or don't engage OST (silently — that's
+        expected for non-US/non-OST moves in a mixed selection),
+        recomputes the rest. Reports a one-line summary.
+
+        Useful after a rate-table change on the engine side: pull
+        up "Bills → All → state=Draft" and run this to refresh
+        every draft's tax breakdown without opening each one.
+        """
+        recomputed = 0
+        skipped_not_draft = 0
+        skipped_no_engagement = 0
+        for move in self:
+            if move.state != "draft":
+                skipped_not_draft += 1
+                continue
+            if not move._ostax_should_capture():
+                skipped_no_engagement += 1
+                continue
+            move._ostax_capture_breakdown()
+            recomputed += 1
+        msg = _(
+            "Recomputed: %(r)d. Skipped: %(d)d (not draft) + %(e)d "
+            "(OST not applicable)."
+        ) % {
+            "r": recomputed,
+            "d": skipped_not_draft,
+            "e": skipped_no_engagement,
+        }
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "title": _("Bulk OST recompute"),
+                "message": msg,
+                "type": "success" if recomputed else "warning",
+                "sticky": False,
+            },
+        }
+
     # ------------------------------------------------------------------
     # Engagement check + capture logic
     # ------------------------------------------------------------------

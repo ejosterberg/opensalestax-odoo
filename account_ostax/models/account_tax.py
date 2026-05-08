@@ -202,16 +202,20 @@ class AccountTax(models.Model):
             OpenSalesTaxNetworkError,
             OpenSalesTaxValidationError,
         ) as e:
+            company._ostax_record_engine_failure()
             if company.ostax_fail_soft:
                 _logger.warning("OST batch-engine fail-soft: %s", e)
                 return
             raise UserError(_("OpenSalesTax error: %s") % e) from e
         except OpenSalesTaxAPIError as e:
+            company._ostax_record_engine_failure()
             if e.status_code >= 500 and company.ostax_fail_soft:
                 _logger.warning("OST 5xx fail-soft: %s", e)
                 return
             raise UserError(_("OpenSalesTax error: %s") % e) from e
         rtt_ms = int((time.monotonic() - started) * 1000)
+        # Engine call succeeded — record telemetry for operator visibility.
+        company._ostax_record_engine_success()
 
         if not jurisdictions:
             return
@@ -376,7 +380,7 @@ class AccountTax(models.Model):
         )
 
         try:
-            return self._ostax_compute_all(
+            result = self._ostax_compute_all(
                 company=company,
                 price_unit=price_unit,
                 currency=currency,
@@ -387,11 +391,14 @@ class AccountTax(models.Model):
                 use_type=use_type,
                 **kw,
             )
+            company._ostax_record_engine_success()
+            return result
         except (
             OpenSalesTaxNetworkError,
             OpenSalesTaxValidationError,
             NonUSDError,
         ) as e:
+            company._ostax_record_engine_failure()
             _logger.warning("OST fail-soft (network/validation/non-USD): %s", e)
             if company.ostax_fail_soft:
                 return super().compute_all(
@@ -405,6 +412,7 @@ class AccountTax(models.Model):
                 )
             raise UserError(_("Sales-tax service unavailable: %s") % e) from e
         except OpenSalesTaxAPIError as e:
+            company._ostax_record_engine_failure()
             if e.status_code >= 500 and company.ostax_fail_soft:
                 _logger.warning("OST 5xx fail-soft: %s", e)
                 return super().compute_all(
