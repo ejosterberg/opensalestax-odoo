@@ -5,7 +5,7 @@
         "Replace static US sales-tax rates with destination-based "
         "lookups against an OpenSalesTax engine instance."
     ),
-    "version": "19.0.0.2.1",
+    "version": "19.0.0.3.0",
     "category": "Accounting/Localizations",
     "website": "https://github.com/ejosterberg/opensalestax-odoo",
     "author": "Eric Osterberg",
@@ -26,6 +26,8 @@
         "data/ostax_actions.xml",
         "views/res_config_settings_views.xml",
         "views/account_move_views.xml",
+        "views/sale_order_views.xml",
+        "views/pos_order_views.xml",
         "views/product_category_views.xml",
         "views/product_template_views.xml",
     ],
