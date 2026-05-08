@@ -10,6 +10,54 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.1.17] — 2026-05-08
+
+### Fixed
+
+- **README "How it works" section was misleading.** It said the
+  connector engaged on "sale order / invoice / POS order /
+  vendor bill" — but v0.1.15 added a defensive bypass on vendor
+  bills, contradicting the "What's deferred to v0.2" section a
+  few paragraphs later. Rewrote the section to describe outbound
+  flows accurately and call out the v0.2 deferral for inbound.
+- README "Status" stamped at v0.1.15; bumped to v0.1.17.
+- Branch matrix Status column had inconsistent text per branch
+  ("shipping" / "shipping (default)" / "shipping (Odoo 19 GA
+  confirmed)"). All four are stable; simplified to "shipping"
+  everywhere.
+
+### Added
+
+- **README install snippet is branch-neutral.** Previously each
+  branch's wheel showed a single "for Odoo NN" line as the
+  primary example, which on PyPI (which displays the latest
+  wheel's metadata) made the page look Odoo-19-specific. Now
+  the install block lists all four version-prefix selectors so
+  the page is useful regardless of which wheel a user lands on.
+- **Quick start** section in README — minimum config walkthrough
+  (engine URL, API key, Test Connection, fail-soft).
+- **Engine compatibility** section in README — minimum engine
+  version (v0.22), tested-against version (v0.54.1+), v1 API
+  contract.
+- **Troubleshooting** section in README covering the five most
+  common deployment / behavior questions.
+- ``readme/USAGE.rst`` — corrected (used to claim vendor bills
+  engage); added per-product / per-category category mapping
+  walkthrough.
+- ``readme/ROADMAP.rst`` — completely rewritten to reflect what
+  actually shipped (v0.1.x line) and what's next (v0.2.x =
+  vendor-side + operator UX; v0.3.x = OCA + ecosystem).
+- ``readme/DESCRIPTION.rst`` — corrected (used to claim "vendor
+  bill" was an engaged flow); now describes outbound-only with
+  v0.2 deferral noted.
+- ``readme/INSTALL.rst`` — was Odoo-18-only and pinned at
+  v0.1.0; now branch-neutral with all four majors and the v0.1.12
+  Odoo-16 wheel-pin warning.
+
+No code changes. Pure documentation pass; PyPI front-page and OCA
+description rendering both update to reflect the current shape of
+the addon.
+
 ## [v0.1.16] — 2026-05-07
 
 ### Changed

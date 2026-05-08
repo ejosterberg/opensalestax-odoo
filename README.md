@@ -24,8 +24,8 @@ Pick the branch matching your Odoo install. Releases are independent per branch.
 |---|---|---|---|
 | 16.0 | [`16.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/16.0) | [`odoo-addon-account-ostax==16.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
 | 17.0 | [`17.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/17.0) | [`odoo-addon-account-ostax==17.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
-| 18.0 | [`18.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0) | [`odoo-addon-account-ostax==18.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping (default) |
-| 19.0 | [`19.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/19.0) | [`odoo-addon-account-ostax==19.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping (Odoo 19 GA confirmed) |
+| 18.0 | [`18.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0) | [`odoo-addon-account-ostax==18.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
+| 19.0 | [`19.0`](https://github.com/ejosterberg/opensalestax-odoo/tree/19.0) | [`odoo-addon-account-ostax==19.0.*`](https://pypi.org/project/odoo-addon-account-ostax/) | shipping |
 
 ## What you get
 
@@ -65,25 +65,54 @@ Pick the branch matching your Odoo install. Releases are independent per branch.
 
 ## Install
 
-```bash
-# Match the branch to your Odoo major:
-pip install opensalestax  # the Python SDK
-pip install 'odoo-addon-account-ostax>=18.0.0.1.15,<19.0'  # for Odoo 18
-# (use >=16.0.0.1.12,<17.0 / >=17.0.0.1.15,<18.0 / >=19.0.0.1.15,<20.0
-# for the other branches)
+The same package serves all four Odoo majors via version-prefix
+selectors. Pick the one that matches your Odoo install:
 
-# Or install from source:
-git clone -b 18.0 https://github.com/ejosterberg/opensalestax-odoo.git
-cd opensalestax-odoo
-# Symlink or copy account_ostax/ into your Odoo addons-path
+```bash
+# 1) The Python SDK (same on every branch):
+pip install opensalestax
+
+# 2) The connector (pick ONE matching your Odoo major):
+pip install 'odoo-addon-account-ostax>=16.0.0.1.12,<17.0'  # Odoo 16
+pip install 'odoo-addon-account-ostax>=17.0,<18.0'         # Odoo 17
+pip install 'odoo-addon-account-ostax>=18.0,<19.0'         # Odoo 18
+pip install 'odoo-addon-account-ostax>=19.0,<20.0'         # Odoo 19
 ```
 
 > **Note for Odoo 16 users:** The `16.0.0.1.11` wheel is broken
 > (a `tools.ormcache` annotation-stripping bug — see CHANGELOG
-> for v0.1.12). Pin **`>=16.0.0.1.12`** or use the latest.
+> for v0.1.12). Always pin **`>=16.0.0.1.12`**.
+
+Or install from source — replace `<NN.0>` with your major:
+
+```bash
+git clone -b <NN.0> https://github.com/ejosterberg/opensalestax-odoo.git
+cd opensalestax-odoo
+# Symlink or copy account_ostax/ into your Odoo addons-path
+```
 
 Then in Odoo: **Apps → search "OpenSalesTax" → Install**, then
 **Settings → Accounting → OpenSalesTax** to configure the engine URL.
+
+## Quick start
+
+After install, in **Settings → Accounting → OpenSalesTax**:
+
+1. **Engine URL** — point at your OpenSalesTax engine (e.g.
+   `http://10.0.0.50:8080`). Self-hosted; see the engine project at
+   <https://github.com/ejosterberg/open-sales-tax> for a
+   docker-compose deployment.
+2. **API key** — leave blank for unauthenticated engines (default).
+3. **Click "Test Connection"** — should report engine version + DB
+   status + RTT in milliseconds. If it fails, check the engine is
+   reachable from the Odoo host and the URL is correct.
+4. **Fail-soft** — recommended ON during initial rollout. The connector
+   falls through to catalog rates if the engine is unreachable rather
+   than blocking invoice posting. Switch off once you trust
+   connectivity.
+
+That's it for sales tax. Create a US customer with a 5-digit ZIP, add a
+sale order or invoice, and the connector engages automatically.
 
 ## Configuring per-product / per-category taxability
 
@@ -104,12 +133,58 @@ The lookup precedence is: per-product → product's category → walk up
 
 ## How it works
 
-The connector overrides `account.tax.compute_all`. When a US partner with a
-valid 5-digit ZIP is on a sale order / invoice / POS order / vendor bill,
-`compute_all` calls the OpenSalesTax engine via the [Python
+The connector overrides Odoo's tax computation entry points (the new
+batch tax engine on 18+, legacy `compute_all` on 16/17). When a US
+customer with a valid 5-digit ZIP is on an outbound flow — sale order,
+customer invoice, credit note, POS order — Odoo's tax pipeline calls
+the OpenSalesTax engine via the [Python
 SDK](https://pypi.org/project/opensalestax/) and replaces the static
-catalog rate with the engine's per-jurisdiction breakdown. Non-US partners
-fall through to Odoo's standard fiscal-position handling.
+catalog rate with a per-jurisdiction breakdown.
+
+Non-US partners fall through to Odoo's standard fiscal-position
+handling. Vendor bills and other inbound moves currently bypass the
+connector (use-tax accrual lands in v0.2 — see "What's deferred to v0.2"
+above).
+
+## Engine compatibility
+
+Tested against OpenSalesTax engine **v0.54.1+**. **Minimum: v0.22** —
+earlier versions had an SD-state-bleed bug (engine GitHub
+[issue #37](https://github.com/ejosterberg/open-sales-tax/issues/37)
+— closed in v0.22.0). The connector requires the v1 HTTP API
+(`/v1/calculate`, `/v1/health`, `/v1/states`, `/v1/rates`).
+
+Pin the engine in production. The connector is forward-compatible
+within the v1 API contract; if a future engine bumps to v2, the
+connector will need a corresponding bump.
+
+## Troubleshooting
+
+**"Test Connection" works but invoices don't engage.** Check that the
+customer has `country_id = United States` and a 5-digit-or-longer
+`zip`. Non-US customers and US customers with malformed ZIPs route to
+Odoo's standard fiscal-position handling — not an OST bug.
+
+**Tax appears as `Tax 15%` (or your chart's default).** You're on
+v0.1.2 or earlier, before per-type tax groups landed. Upgrade to
+**v0.1.3 or later** — the synthetic taxes now sit under
+`OpenSalesTax — State / County / City / District` groups.
+
+**Vendor bills show catalog rates.** Expected on v0.1.x — vendor bills
+fall through to Odoo's catalog handling. Proper use-tax accrual at the
+buyer's location is v0.2 work.
+
+**Engine is reachable but calls return errors.** Enable **Debug log**
+on the settings page and check **Settings → Technical → OpenSalesTax
+Calc Log** for the last ~50 calls per company (status code, RTT,
+engine version). If 4xx, the request is malformed (usually a
+non-numeric ZIP); if 5xx, the engine itself is failing — pull engine
+logs.
+
+**Invoice posts with `amount_tax = 0` despite a US customer.** The
+customer probably has an OST exemption certificate set
+(`res.partner` → *OST exemption* tab). Exempt partners short-circuit
+to zero tax with no engine call.
 
 ## Calculation only
 
@@ -129,8 +204,8 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-**Production-grade across all four Odoo majors.** v0.1.15 is shipping
-on PyPI as `odoo-addon-account-ostax==<branch>.0.1.15` for 16.0,
+**Production-grade across all four Odoo majors.** v0.1.17 is shipping
+on PyPI as `odoo-addon-account-ostax==<branch>.0.1.17` for 16.0,
 17.0, 18.0, and 19.0. Per-branch test workflows green on every
 branch; 49 unit tests pass on real Odoo + Postgres in Docker.
 
