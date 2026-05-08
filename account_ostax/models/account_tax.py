@@ -138,24 +138,40 @@ class AccountTax(models.Model):
         if currency and getattr(currency, "name", None) and currency.name != "USD":
             return  # leave for super() to use catalog rate
 
-        # Defensive: bypass on inbound moves (vendor bills, vendor
-        # refunds). Use-tax accrual on vendor bills uses the BUYER's
-        # location, not the partner's (vendor's) — and the engine call
-        # would otherwise produce wrong numbers. Proper use-tax
-        # accrual lands in v0.2 with a separate code path; until
-        # then, vendor bills fall through to Odoo's standard catalog
-        # rates.
+        # Resolve direction (outbound = sales tax, inbound = use tax).
+        # Inbound use-tax accrual (v0.2) uses the BUYER's ZIP, not the
+        # partner's (vendor's). When the company hasn't opted in to
+        # use-tax accrual, inbound moves bypass entirely (same as
+        # v0.1.15 behavior).
         record = base_line.get("record")
+        is_inbound = False
         if record is not None and getattr(record, "_name", None) == "account.move.line":
             move_type = getattr(getattr(record, "move_id", None), "move_type", "")
             if move_type and move_type.startswith("in_"):
-                return
+                is_inbound = True
 
-        if not self._ostax_should_engage(company, partner):
+        if is_inbound:
+            if not getattr(company, "ostax_accrue_use_tax", False):
+                return  # opted out — fall through to catalog rates
+            if not company.ostax_use_tax_payable_account_id:
+                raise UserError(_(
+                    "OpenSalesTax: configure a 'Use Tax Payable' account on "
+                    "the company OST settings before enabling use-tax "
+                    "accrual on vendor bills."
+                ))
+            dest_partner = company.ostax_origin_address_id or company.partner_id
+            use_type = "purchase"
+        else:
+            dest_partner = partner
+            use_type = "sale"
+
+        if not self._ostax_should_engage(company, dest_partner):
             return
 
-        # Exempt partners → zero tax, no engine call. Strip catalog taxes too.
-        if self._ostax_partner_is_exempt(partner):
+        # Customer exemption short-circuit — only meaningful on the
+        # outbound side; inbound (use-tax) accrual ignores it (a buyer's
+        # exemption certificate doesn't apply to use tax owed).
+        if not is_inbound and self._ostax_partner_is_exempt(partner):
             base_line["tax_ids"] = self.env["account.tax"]
             base_line["manual_tax_amounts"] = {}
             return
@@ -168,7 +184,7 @@ class AccountTax(models.Model):
         if line_total <= 0:
             return  # nothing to compute
 
-        zip_value = (partner.zip or "").strip()
+        zip_value = (dest_partner.zip or "").strip()
         zip5 = zip_value[:5]
         zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
         product = base_line.get("product_id")
@@ -208,7 +224,9 @@ class AccountTax(models.Model):
                                 tax=Decimal(tax_str) if tax_str else None)
             for name, jtype, rate_str, tax_str in jurisdictions
         ]
-        synthetic_by_key = self._ostax_ensure_synthetic_taxes(company, engine_juris)
+        synthetic_by_key = self._ostax_ensure_synthetic_taxes(
+            company, engine_juris, use_type=use_type
+        )
         synthetic_ids: list[int] = []
         manual_tax_amounts: dict[str, dict[str, float]] = {}
         for j in engine_juris:
@@ -295,24 +313,36 @@ class AccountTax(models.Model):
         ``fixed_multiplicator`` (16/17), ``rounding_method`` (18+).
         """
         company = self._ostax_company()
-        # Defensive: only engage on sales taxes. Purchase taxes (vendor
-        # bills, customs) call into a different scenario — use-tax
-        # accrual at the BUYER's location, not the partner's. The v0.1
-        # engine call uses partner.zip which is the vendor's address on
-        # vendor bills, producing nonsensical numbers. Proper use-tax
-        # accrual lands in v0.2 with a separate code path; until then,
-        # purchase taxes fall through to Odoo's standard catalog rates.
-        if self and self[:1].type_tax_use and self[:1].type_tax_use != "sale":
-            return super().compute_all(
-                price_unit,
-                currency=currency,
-                quantity=quantity,
-                product=product,
-                partner=partner,
-                is_refund=is_refund,
-                **kw,
-            )
-        if not self._ostax_should_engage(company, partner):
+        # Direction: purchase taxes route to use-tax accrual when the
+        # company has opted in; otherwise fall through to catalog rates.
+        # Sale taxes (the common path) keep the v0.1 behavior.
+        is_purchase = bool(
+            self and self[:1].type_tax_use and self[:1].type_tax_use == "purchase"
+        )
+        if is_purchase:
+            if not getattr(company, "ostax_accrue_use_tax", False):
+                return super().compute_all(
+                    price_unit,
+                    currency=currency,
+                    quantity=quantity,
+                    product=product,
+                    partner=partner,
+                    is_refund=is_refund,
+                    **kw,
+                )
+            if not company.ostax_use_tax_payable_account_id:
+                raise UserError(_(
+                    "OpenSalesTax: configure a 'Use Tax Payable' account "
+                    "on the company OST settings before enabling use-tax "
+                    "accrual on vendor bills."
+                ))
+            dest_partner = company.ostax_origin_address_id or company.partner_id
+            use_type = "purchase"
+        else:
+            dest_partner = partner
+            use_type = "sale"
+
+        if not self._ostax_should_engage(company, dest_partner):
             return super().compute_all(
                 price_unit,
                 currency=currency,
@@ -323,10 +353,11 @@ class AccountTax(models.Model):
                 **kw,
             )
 
-        # Exemption short-circuit: skip the engine entirely; the partner is
-        # tax-free at every jurisdiction. The certificate stays on the
-        # partner record for audit (merchant-tracked).
-        if self._ostax_partner_is_exempt(partner):
+        # Exemption short-circuit: only meaningful for outbound (sales).
+        # Use-tax accrual on vendor bills doesn't honor a partner-side
+        # exemption (a buyer's exemption certificate doesn't apply to
+        # use tax owed; it's a separate concern).
+        if not is_purchase and self._ostax_partner_is_exempt(partner):
             sign = -1 if is_refund else 1
             base = float(price_unit) * float(quantity) * sign
             return {
@@ -351,8 +382,9 @@ class AccountTax(models.Model):
                 currency=currency,
                 quantity=quantity,
                 product=product,
-                partner=partner,
+                partner=dest_partner,
                 is_refund=is_refund,
+                use_type=use_type,
                 **kw,
             )
         except (
@@ -480,9 +512,18 @@ class AccountTax(models.Model):
         product: Any,
         partner: Any,
         is_refund: bool,
+        use_type: str = "sale",
         **_kw: Any,
     ) -> dict[str, Any]:
-        """Build the engine payload, call the SDK, mash the response."""
+        """Build the engine payload, call the SDK, mash the response.
+
+        ``use_type`` is ``"sale"`` (default — outbound) or
+        ``"purchase"`` (use-tax accrual on vendor bills, v0.2). It
+        propagates to ``_ostax_ensure_synthetic_taxes`` so the
+        materialized synthetic taxes carry the right
+        ``type_tax_use`` and (for purchase) credit the company's
+        configured Use Tax Payable account.
+        """
         zip_value = (partner.zip or "").strip()
         zip5 = zip_value[:5]
         zip4 = zip_value[5:].lstrip("-").strip() if len(zip_value) > 5 else None
@@ -536,7 +577,7 @@ class AccountTax(models.Model):
         sign = -1 if is_refund else 1
 
         synthetic_taxes_by_jurisdiction = self._ostax_ensure_synthetic_taxes(
-            company, engine_juris
+            company, engine_juris, use_type=use_type
         )
 
         # Build the compute_all-style return dict.
@@ -639,7 +680,7 @@ class AccountTax(models.Model):
     # ------------------------------------------------------------------
 
     def _ostax_ensure_synthetic_taxes(
-        self, company: Any, jurisdictions: list[Any]
+        self, company: Any, jurisdictions: list[Any], use_type: str = "sale"
     ) -> dict[tuple[str, str], Any]:
         """Return a dict mapping (name, type) → account.tax record.
 
@@ -652,6 +693,14 @@ class AccountTax(models.Model):
         sale orders shows meaningful labels instead of falling back
         to the chart-of-accounts default group ("Tax 15%" on
         ``l10n_generic_coa``, etc.).
+
+        ``use_type`` selects which ``type_tax_use`` the synthetics
+        carry — ``"sale"`` (default — sales tax on customer flows)
+        or ``"purchase"`` (use tax on vendor-bill flows, v0.2).
+        Sale and purchase synthetics are kept in separate records
+        (different ``type_tax_use``) so they don't pollute each
+        other's reporting; lookups within a single calc only see
+        their own kind.
         """
         Tax = self.env["account.tax"].sudo().with_context(active_test=False)
         groups_by_type = self._ostax_ensure_tax_groups(company)
@@ -660,6 +709,7 @@ class AccountTax(models.Model):
             [
                 ("company_id", "=", company.id),
                 ("ostax_synthetic", "=", True),
+                ("type_tax_use", "=", use_type),
             ]
         )
         by_key: dict[tuple[str, str], Any] = {
@@ -675,15 +725,25 @@ class AccountTax(models.Model):
                 t.tax_group_id = target_group.id
             if not t.active:
                 t.active = True
+        # Use-tax synthetics carry a distinct name suffix so they're
+        # visually distinguishable on the line UI and in tax reports.
+        name_suffix = ", use tax" if use_type == "purchase" else ""
+        # Use-tax synthetics route the tax amount to the company's
+        # configured Use Tax Payable account via repartition lines.
+        # Sales-side synthetics let Odoo's default account routing
+        # (the chart's tax_account_id) handle it.
+        repartition_account = None
+        if use_type == "purchase":
+            repartition_account = company.ostax_use_tax_payable_account_id
         for j in jurisdictions:
             key = (j.name, j.type)
             if key in by_key:
                 continue
             vals = {
-                "name": f"OST · {j.name} ({j.type})",
+                "name": f"OST · {j.name} ({j.type}{name_suffix})",
                 "amount": 0.0,  # OST overrides the amount per-calc
                 "amount_type": "percent",
-                "type_tax_use": "sale",
+                "type_tax_use": use_type,
                 "company_id": company.id,
                 "active": True,
                 "ostax_synthetic": True,
@@ -698,6 +758,24 @@ class AccountTax(models.Model):
             target_group = groups_by_type.get(j.type)
             if target_group:
                 vals["tax_group_id"] = target_group.id
+            # Repartition: route purchase-side tax to Use Tax Payable.
+            if repartition_account:
+                vals["invoice_repartition_line_ids"] = [
+                    (0, 0, {"factor_percent": 100, "repartition_type": "base"}),
+                    (0, 0, {
+                        "factor_percent": 100,
+                        "repartition_type": "tax",
+                        "account_id": repartition_account.id,
+                    }),
+                ]
+                vals["refund_repartition_line_ids"] = [
+                    (0, 0, {"factor_percent": 100, "repartition_type": "base"}),
+                    (0, 0, {
+                        "factor_percent": 100,
+                        "repartition_type": "tax",
+                        "account_id": repartition_account.id,
+                    }),
+                ]
             by_key[key] = Tax.create(vals)
         return by_key
 

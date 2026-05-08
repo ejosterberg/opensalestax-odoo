@@ -52,16 +52,25 @@ Pick the branch matching your Odoo install. Releases are independent per branch.
 - Optional admin debug log of recent calculations
 - Optional 90-day archive cron for jurisdictions you've stopped shipping to
 
-## What's deferred to v0.2
+## Vendor bills (use-tax accrual) — v0.2.0
 
-- **Vendor bills + use-tax accrual.** Use tax is owed at the buyer's
-  location, not the vendor's; v0.1 doesn't yet implement the
-  buyer-location code path. Vendor bills (and any purchase-typed
-  catalog tax) bypass the connector and fall through to Odoo's standard
-  catalog rates — see v0.1.15.
+When ``Accrue use tax on vendor bills`` is ON in the company settings,
+vendor bills with US partners route through the engine using the
+BUYER's ZIP (your nexus location), producing synthetic purchase-typed
+taxes that credit your **Use Tax Payable** account.
+
+Default is **OFF** — existing v0.1.x users see no behavior change on
+upgrade. To enable: set the **Use-tax address** to your nexus partner,
+configure the **Use Tax Payable account**, then toggle the setting on.
+See `CHANGELOG.md` v0.2.0 for the full migration walkthrough.
+
+## What's deferred to v0.3
+
 - **POS live-quote.** Server-authoritative compute on order close
-  works; per-line live JS-side round-trip on each line-add is a v0.2
-  enhancement.
+  works; per-line live JS-side round-trip on each line-add is a
+  v0.3 enhancement.
+- **OCA upstream submission** to ``OCA/account-fiscal-rule``
+  (relicense to AGPL-3 dual at submission time).
 
 ## Install
 
@@ -170,9 +179,11 @@ v0.1.2 or earlier, before per-type tax groups landed. Upgrade to
 **v0.1.3 or later** — the synthetic taxes now sit under
 `OpenSalesTax — State / County / City / District` groups.
 
-**Vendor bills show catalog rates.** Expected on v0.1.x — vendor bills
-fall through to Odoo's catalog handling. Proper use-tax accrual at the
-buyer's location is v0.2 work.
+**Vendor bills show catalog rates.** That's the v0.1.x default —
+vendor bills bypass the connector. To enable use-tax accrual,
+upgrade to **v0.2.0+**, set the Use-tax address + Use Tax Payable
+account in company settings, and toggle **Accrue use tax on vendor
+bills** ON.
 
 **Engine is reachable but calls return errors.** Enable **Debug log**
 on the settings page and check **Settings → Technical → OpenSalesTax
@@ -204,10 +215,10 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-**Production-grade across all four Odoo majors.** v0.1.17 is shipping
-on PyPI as `odoo-addon-account-ostax==<branch>.0.1.17` for 16.0,
+**Production-grade across all four Odoo majors.** v0.2.0 is shipping
+on PyPI as `odoo-addon-account-ostax==<branch>.0.2.0` for 16.0,
 17.0, 18.0, and 19.0. Per-branch test workflows green on every
-branch; 49 unit tests pass on real Odoo + Postgres in Docker.
+branch; 58 unit tests pass on real Odoo + Postgres in Docker.
 
 What works on every branch:
 

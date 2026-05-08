@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""v0.1.15 — defensive bypass on vendor bills / purchase taxes.
+"""v0.1.15 — defensive bypass on vendor bills + purchase taxes (default).
 
-Until v0.2 ships proper use-tax accrual at the buyer's location, the
-addon must NOT call the engine on vendor bills (move_type starts
-with ``in_``) or with purchase-typed catalog taxes — those produce
-nonsensical numbers because the engine call uses the partner's ZIP,
-which on a vendor bill is the vendor's address rather than the
-buyer's. Falling through to Odoo's standard catalog rates is the
-correct behavior until proper use-tax handling lands.
+When the company has NOT opted in to use-tax accrual (the v0.2.0
+default = off), the addon must NOT call the engine on vendor bills
+or purchase-typed catalog taxes; falling through to Odoo's
+standard catalog-rate handling is correct.
+
+For the opt-in (use-tax accrual ON) path, see
+``test_vendor_use_tax.py``.
 """
 
 from __future__ import annotations
 
-from datetime import date
 from unittest.mock import patch
 
 from odoo.release import version_info
@@ -30,10 +29,14 @@ _HAS_BATCH_ENGINE = version_info[0] >= 18
 @tagged("post_install", "-at_install")
 class TestComputeAllPurchaseBypass(OstaxTestCase):
     """Legacy ``compute_all`` path — purchase-typed taxes must fall
-    through to super() instead of engaging the engine."""
+    through to super() when use-tax accrual is OFF (the default)."""
 
     def setUp(self) -> None:
         super().setUp()
+        # Defensive: ensure use-tax accrual is OFF for these tests.
+        # OstaxTestCase setUpClass leaves it at the default (False),
+        # but be explicit so the contract is visible.
+        self.company.ostax_accrue_use_tax = False
         self.us_partner = self.env["res.partner"].create({
             "name": "US Vendor",
             "country_id": self.us_country.id,
@@ -44,7 +47,7 @@ class TestComputeAllPurchaseBypass(OstaxTestCase):
         )
         self.purchase_tax.type_tax_use = "purchase"
 
-    def test_purchase_tax_bypasses_engine(self) -> None:
+    def test_purchase_tax_bypasses_engine_when_accrual_off(self) -> None:
         with patch("opensalestax.OpenSalesTaxClient.calculate") as m:
             self.purchase_tax.compute_all(100.0, partner=self.us_partner)
         m.assert_not_called()
@@ -67,11 +70,12 @@ class TestComputeAllPurchaseBypass(OstaxTestCase):
 @tagged("post_install", "-at_install")
 class TestBatchEngineInboundMoveBypass(OstaxTestCase):
     """Batch-engine path (Odoo 18+) — inbound moves (``in_invoice`` /
-    ``in_refund``) must bypass the engine even when the partner
-    happens to be US-located."""
+    ``in_refund``) must bypass the engine when use-tax accrual is OFF
+    (the default)."""
 
     def setUp(self) -> None:
         super().setUp()
+        self.company.ostax_accrue_use_tax = False
         self.vendor = self.env["res.partner"].create({
             "name": "US Vendor at MN address",
             "country_id": self.us_country.id,
@@ -83,12 +87,6 @@ class TestBatchEngineInboundMoveBypass(OstaxTestCase):
             self.skipTest("Batch tax engine only exists on Odoo 18+")
         Tax = self.env["account.tax"]
 
-        # Build a minimal vendor bill base_line that LOOKS like one —
-        # we exercise the gate inside ``_ostax_inject_into_base_line``
-        # directly to keep the test focused.
-        line_record = self.env["account.move.line"]  # empty recordset is fine
-        # Simulate an account.move.line bound to an inbound move by
-        # constructing a tiny stand-in object that quacks like one.
         class _FakeMove:
             move_type = "in_invoice"
 
