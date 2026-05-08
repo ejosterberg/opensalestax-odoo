@@ -468,6 +468,8 @@ class AccountTax(models.Model):
         * ``partner`` is non-empty
         * ``partner.country_id`` is the US
         * ``partner.zip`` is at least 5 digits
+        * ``partner.state_id`` is in ``company.ostax_nexus_state_ids``
+          (only when that field is set; empty = engage everywhere)
         """
         if not (company and company.ostax_enabled and company.ostax_api_url):
             return False
@@ -480,6 +482,14 @@ class AccountTax(models.Model):
         zip_value = (partner.zip or "").strip()
         if len(zip_value) < 5 or not zip_value[:5].isdigit():
             return False
+        # Per-state nexus filter (v0.3.0). When nexus states are
+        # configured, only engage if the partner's state is in the
+        # set. Empty nexus list = engage in all US states (default
+        # for backward compatibility with v0.2.x).
+        nexus_states = getattr(company, "ostax_nexus_state_ids", None)
+        if nexus_states:
+            if not partner.state_id or partner.state_id not in nexus_states:
+                return False
         return True
 
     @staticmethod

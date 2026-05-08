@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+<odoo>
+    <!-- v0.3.0 — surface the OST audit fields on pos.order so the
+         per-jurisdiction breakdown is visible from the back-office
+         POS order list (the cashier-facing UI is unchanged in v0.3;
+         live JS-side quote is the v0.4 candidate). -->
+    <record id="view_pos_order_form_ostax" model="ir.ui.view">
+        <field name="name">pos.order.form.inherit.ostax</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//notebook" position="inside">
+                <page string="OpenSalesTax"
+                      name="ostax_breakdown_tab"
+                      invisible="not ostax_breakdown and not ostax_calculated_at">
+                    <group>
+                        <group>
+                            <field name="ostax_engine_version" readonly="1"/>
+                            <field name="ostax_calculated_at" readonly="1"/>
+                            <field name="ostax_offline_calc" readonly="1"/>
+                        </group>
+                    </group>
+                    <separator string="Per-jurisdiction breakdown (audit JSON)"/>
+                    <field name="ostax_breakdown" readonly="1" widget="text"/>
+                </page>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>
