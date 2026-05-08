@@ -53,6 +53,51 @@ class OstaxTestCase(TransactionCase):
             ),
         )
 
+    def _ostax_get_or_make_liability_account(self):
+        """Return a usable liability ``account.account`` for the company.
+
+        Cross-version: Odoo 16 uses ``user_type_id`` (Many2one to
+        ``account.account.type``); 17+ uses ``account_type``
+        (Selection). Odoo 18+ also dropped ``company_id`` (single
+        company) in favor of ``company_ids`` (Many2many shared
+        accounts). Search before create to avoid the field-shape
+        differences entirely.
+        """
+        Account = self.env["account.account"]
+        # Try Odoo 17+ shape first (account_type selection).
+        if "account_type" in Account._fields:
+            domain = [
+                ("account_type", "in",
+                 ["liability_current", "liability_payable", "liability_non_current"]),
+            ]
+        else:
+            # Odoo 16: filter via user_type_id.type
+            domain = [("user_type_id.type", "=", "liability")]
+        existing = Account.search(domain, limit=1)
+        if existing:
+            return existing
+        # No chart installed → create one with version-appropriate vals.
+        # Cross-version-safe vals dict:
+        vals = {
+            "name": "OST Test Liability",
+            "code": "OSTLIAB",
+        }
+        if "account_type" in Account._fields:
+            vals["account_type"] = "liability_current"
+        else:
+            # Odoo 16 needs user_type_id pointing at any liability type
+            uti = self.env["account.account.type"].search(
+                [("type", "=", "liability")], limit=1
+            )
+            if uti:
+                vals["user_type_id"] = uti.id
+        # company_id (16/17) vs company_ids (18+)
+        if "company_id" in Account._fields:
+            vals["company_id"] = self.company.id
+        elif "company_ids" in Account._fields:
+            vals["company_ids"] = [(4, self.company.id)]
+        return Account.create(vals)
+
     def _ostax_tax_vals(self, *, name: str, amount: float) -> dict:
         """Cross-version-safe vals dict for account.tax.create().
 

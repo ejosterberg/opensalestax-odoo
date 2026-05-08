@@ -71,7 +71,12 @@ class ResCompany(models.Model):
     ostax_use_tax_payable_account_id = fields.Many2one(
         "account.account",
         string="Use Tax Payable account",
-        domain="[('company_id', '=', id)]",
+        # No domain — account.account.company_id was renamed to
+        # company_ids (Many2many) in Odoo 18, so a static
+        # company-scoping domain breaks cross-version. The UI is
+        # already scoped to the company being edited; multi-company
+        # leakage is theoretical and a Many2one anyway can only
+        # hold one record.
         help=(
             "Liability account credited by use-tax synthetic taxes "
             "on vendor bills. Required when ``Accrue use tax on "
