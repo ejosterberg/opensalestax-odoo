@@ -46,10 +46,24 @@
                     </setting>
 
                     <setting id="ostax_origin_setting"
-                             string="Origin / nexus address"
-                             help="Your shipping origin partner. Used as the destination for vendor-bill use-tax accrual (v0.2)."
+                             string="Use-tax address (buyer location)"
+                             help="Partner whose ZIP is the destination for vendor-bill use-tax accrual. Falls back to the company's main address if unset."
                              invisible="not ostax_enabled">
                         <field name="ostax_origin_address_id"/>
+                    </setting>
+
+                    <setting id="ostax_accrue_use_tax_setting"
+                             string="Accrue use tax on vendor bills"
+                             help="When on, vendor bills with US partners route through the engine using your nexus location's ZIP, producing a synthetic purchase-tax stack that credits your Use Tax Payable account. Off → vendor bills bypass the connector (the v0.1.x behavior)."
+                             invisible="not ostax_enabled">
+                        <field name="ostax_accrue_use_tax"/>
+                    </setting>
+
+                    <setting id="ostax_use_tax_account_setting"
+                             string="Use Tax Payable account"
+                             help="Liability account credited by use-tax synthetic taxes on vendor bills. Required when use-tax accrual is on. Sales tax credits a separate Sales Tax Payable; keeping these distinct simplifies state reporting."
+                             invisible="not ostax_enabled or not ostax_accrue_use_tax">
+                        <field name="ostax_use_tax_payable_account_id"/>
                     </setting>
 
                     <setting id="ostax_cache_setting"

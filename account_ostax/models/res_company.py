@@ -44,11 +44,42 @@ class ResCompany(models.Model):
     )
     ostax_origin_address_id = fields.Many2one(
         "res.partner",
-        string="Origin address",
+        string="Use-tax address (buyer location)",
         help=(
-            "Nexus / shipping origin partner. Use-tax accrual on vendor "
-            "bills uses this address as the destination; sales use the "
-            "customer's shipping address."
+            "Partner whose ZIP is used as the destination for use-tax "
+            "accrual on vendor bills (since vendor bills don't carry the "
+            "buyer's address; the bill's partner_id is the vendor). "
+            "Falls back to the company's main address if unset. Sales "
+            "tax always uses the customer's shipping address; this "
+            "field only matters when ``ostax_accrue_use_tax`` is on."
+        ),
+    )
+    ostax_accrue_use_tax = fields.Boolean(
+        string="Accrue use tax on vendor bills",
+        default=False,
+        help=(
+            "Off by default. When on, vendor bills with US partners "
+            "and a 5-digit-ZIP buyer location route through the engine "
+            "with the BUYER's ZIP (your nexus location, configured via "
+            "the Use-tax address field above), producing a synthetic "
+            "purchase-tax stack that credits your Use Tax Payable "
+            "account. Off → vendor bills bypass the connector and use "
+            "Odoo's standard catalog-rate handling (the v0.1.x "
+            "behavior)."
+        ),
+    )
+    ostax_use_tax_payable_account_id = fields.Many2one(
+        "account.account",
+        string="Use Tax Payable account",
+        domain="[('company_id', '=', id)]",
+        help=(
+            "Liability account credited by use-tax synthetic taxes "
+            "on vendor bills. Required when ``Accrue use tax on "
+            "vendor bills`` is on. Sales tax credits a separate "
+            "Sales Tax Payable; keeping these distinct simplifies "
+            "state-by-state reporting (use tax is filed alongside "
+            "sales tax but reported as a separate line on most "
+            "state returns)."
         ),
     )
     ostax_cache_ttl_hours = fields.Integer(
