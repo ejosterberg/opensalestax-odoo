@@ -205,6 +205,10 @@ class TestBatchEngineUseTaxAccrual(OstaxTestCase):
 
         class _FakeMove:
             move_type = "in_invoice"
+            # Set to "posted" so the post-engagement line-tag-persistence
+            # block early-returns (it only writes on draft moves). Our
+            # _FakeLine doesn't carry a writable tax_ids field anyway.
+            state = "posted"
 
         class _FakeLine:
             _name = "account.move.line"
