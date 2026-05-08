@@ -52,6 +52,9 @@ class ResConfigSettings(models.TransientModel):
     ostax_calc_count_today = fields.Integer(
         related="company_id.ostax_calc_count_today", readonly=True
     )
+    ostax_nexus_state_ids = fields.Many2many(
+        related="company_id.ostax_nexus_state_ids", readonly=False
+    )
 
     def action_ostax_test_connection(self) -> dict[str, Any]:
         """Forward to the company-level connection test."""

@@ -10,6 +10,47 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.0] — 2026-05-08
+
+### Added
+
+- **Per-state nexus filter on res.company.** New
+  ``ostax_nexus_state_ids`` Many2many → ``res.country.state``
+  (US-scoped via the settings UI domain). When set, the
+  connector ONLY engages the engine for customers shipping to
+  one of these states; out-of-state US customers fall through
+  to Odoo's standard catalog-rate handling. Empty (default) =
+  engage in all US states (v0.2.x behavior).
+
+  Solves the small-merchant case ("I only collect in MN and
+  WI") which was previously workaroundable only via fiscal
+  positions per customer. A US customer in CA on a MN+WI
+  nexus list now produces zero tax instead of querying the
+  engine and paying for an unnecessary calc.
+
+- **Audit-trail UI on sale.order and pos.order.** The
+  per-jurisdiction breakdown previously only rendered on
+  ``account.move`` form views. v0.3.0 surfaces the same
+  "OpenSalesTax" notebook tab on:
+
+  - ``sale.order`` form — visible at quote time, before the
+    invoice exists. Useful for sales reps confirming the tax
+    quote with the customer.
+  - ``pos.order`` form (back-office) — shows breakdown +
+    offline-cache flag for cashier-end audit.
+
+  The fields (``ostax_breakdown``, ``ostax_engine_version``,
+  ``ostax_calculated_at``) already existed on both models;
+  this release adds the views.
+
+### Tests
+
+- 4 new tests in ``test_nexus_filter.py`` covering: empty
+  nexus list engages everywhere, in-nexus state engages,
+  out-of-nexus state bypasses, partner with no state record
+  bypasses (conservative — can't confirm in-nexus without
+  state info).
+
 ## [v0.2.1] — 2026-05-08
 
 ### Added
