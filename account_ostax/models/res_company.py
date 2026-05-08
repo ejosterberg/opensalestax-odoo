@@ -186,6 +186,28 @@ class ResCompany(models.Model):
         ),
     )
 
+    # ------------------------------------------------------------------
+    # Per-state nexus filter (v0.3.0)
+    # ------------------------------------------------------------------
+
+    ostax_nexus_state_ids = fields.Many2many(
+        "res.country.state",
+        relation="res_company_ostax_nexus_states_rel",
+        column1="company_id",
+        column2="state_id",
+        string="States with nexus",
+        help=(
+            "If set, the connector ONLY engages the engine for "
+            "customers shipping to one of these states. Out-of-state "
+            "US customers fall through to Odoo's standard catalog "
+            "rates (typically zero — fiscal positions can refine "
+            "this). Leave empty to engage for all US customers "
+            "(the default). Use this to match your actual sales-tax "
+            "nexus footprint — small merchants typically collect in "
+            "only a handful of states."
+        ),
+    )
+
     def _ostax_record_engine_success(self) -> None:
         """Reset the failure streak and stamp the last-success time.
 

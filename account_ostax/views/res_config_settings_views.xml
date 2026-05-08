@@ -52,6 +52,15 @@
                         <field name="ostax_origin_address_id"/>
                     </setting>
 
+                    <setting id="ostax_nexus_setting"
+                             string="States with nexus"
+                             help="If set, the connector ONLY engages for customers shipping to one of these states. Empty = engage for all US customers (the default). Use this to match your actual sales-tax nexus footprint — small merchants typically collect in only a handful of states."
+                             invisible="not ostax_enabled">
+                        <field name="ostax_nexus_state_ids"
+                               widget="many2many_tags"
+                               domain="[('country_id.code', '=', 'US')]"/>
+                    </setting>
+
                     <setting id="ostax_accrue_use_tax_setting"
                              string="Accrue use tax on vendor bills"
                              help="When on, vendor bills with US partners route through the engine using your nexus location's ZIP, producing a synthetic purchase-tax stack that credits your Use Tax Payable account. Off → vendor bills bypass the connector (the v0.1.x behavior)."
