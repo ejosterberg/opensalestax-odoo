@@ -21,6 +21,12 @@ class ResConfigSettings(models.TransientModel):
     ostax_origin_address_id = fields.Many2one(
         related="company_id.ostax_origin_address_id", readonly=False
     )
+    ostax_accrue_use_tax = fields.Boolean(
+        related="company_id.ostax_accrue_use_tax", readonly=False
+    )
+    ostax_use_tax_payable_account_id = fields.Many2one(
+        related="company_id.ostax_use_tax_payable_account_id", readonly=False
+    )
     ostax_cache_ttl_hours = fields.Integer(
         related="company_id.ostax_cache_ttl_hours", readonly=False
     )

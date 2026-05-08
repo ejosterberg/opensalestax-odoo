@@ -10,6 +10,87 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.2.0] — 2026-05-08
+
+### Added
+
+- **Vendor-bill use-tax accrual at the buyer's location.**
+  Replaces the v0.1.15 defensive bypass with a proper code path.
+  When the company has opted in via the new
+  ``ostax_accrue_use_tax`` setting (default OFF), vendor bills
+  with US partners route through the engine using the BUYER's
+  ZIP — not the vendor's — producing synthetic purchase-typed
+  taxes that credit the company's configured Use Tax Payable
+  account.
+- New per-company settings:
+
+  - ``ostax_accrue_use_tax`` (Boolean, default False) — opt-in
+    toggle. Off → vendor bills bypass the connector (the v0.1.x
+    behavior). On → engage the engine on inbound moves with
+    proper buyer-location resolution.
+  - ``ostax_use_tax_payable_account_id`` (Many2one to
+    ``account.account``) — required when ``accrue_use_tax`` is
+    on. Liability account credited by use-tax synthetic taxes
+    via repartition lines. Sales tax credits a separate Sales
+    Tax Payable account; keeping these distinct simplifies
+    state-by-state reporting.
+  - ``ostax_origin_address_id`` repurposed (was a stub field
+    in v0.1.x) as the buyer-location partner. Falls back to
+    ``company.partner_id`` when unset.
+
+- Synthetic taxes now carry distinct ``type_tax_use`` per
+  direction: ``"sale"`` for outbound (existing behavior),
+  ``"purchase"`` for use-tax. Sales and purchase synthetics
+  for the same jurisdiction are SEPARATE records — they don't
+  pollute each other's reporting.
+- Use-tax synthetics carry a name-suffix disambiguator:
+  ``OST · Minnesota (state, use tax)`` vs
+  ``OST · Minnesota (state)`` for sales. Visible on line tags
+  + tax reports.
+- Use-tax synthetics route the tax amount to
+  ``ostax_use_tax_payable_account_id`` via repartition lines
+  (``invoice_repartition_line_ids`` /
+  ``refund_repartition_line_ids``).
+
+### Changed
+
+- ``_ostax_ensure_synthetic_taxes(...)`` takes an optional
+  ``use_type`` parameter (default ``"sale"``). Search and
+  create are scoped to the requested type so sale/purchase
+  records remain disjoint.
+- ``_ostax_compute_all(...)`` takes an optional ``use_type``
+  parameter; threaded through from ``compute_all`` based on
+  the catalog tax's ``type_tax_use``.
+- Customer exemption short-circuit now skips on the inbound
+  side. A buyer's exemption certificate doesn't apply to
+  use tax owed (use tax is the buyer's own liability,
+  separate from sales tax exemption logic).
+
+### Migration note
+
+Existing v0.1.x users upgrading to v0.2.0 see no behavior
+change unless they opt in via ``Settings → Accounting →
+OpenSalesTax → Accrue use tax on vendor bills``. To enable:
+
+1. Set the **Use-tax address (buyer location)** to your
+   primary nexus partner (or leave unset to use the company's
+   main address).
+2. Configure **Use Tax Payable account** — pick or create a
+   liability account in your chart for use-tax accrual.
+3. Toggle **Accrue use tax on vendor bills** ON.
+
+The next vendor bill posted by a US partner will then route
+through the engine and book use tax to the configured account.
+
+### Tests
+
+- 9 new tests in ``test_vendor_use_tax.py`` covering
+  legacy + batch paths × off/on/no-account/buyer-zip
+  resolution / type_tax_use separation.
+- Existing ``test_vendor_bypass.py`` updated to make the
+  ``accrue_use_tax = False`` precondition explicit (still
+  the default).
+
 ## [v0.1.17] — 2026-05-08
 
 ### Fixed
