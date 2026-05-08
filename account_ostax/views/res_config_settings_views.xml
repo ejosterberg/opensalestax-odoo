@@ -94,6 +94,46 @@
                         <field name="ostax_debug_log_enabled"/>
                     </setting>
 
+                    <setting id="ostax_telemetry_block"
+                             string="Engine telemetry"
+                             help="Read-only signals showing how the engine has been performing for this company. Useful for spotting silent fail-soft fallback."
+                             invisible="not ostax_enabled">
+                        <div class="o_setting_box">
+                            <div class="text-muted" style="font-size: 0.9em;">
+                                <strong>Last successful call:</strong>
+                                <field name="ostax_last_successful_calc_at"
+                                       readonly="1" nolabel="1"/>
+                            </div>
+                            <div class="text-muted" style="font-size: 0.9em;">
+                                <strong>Calls today:</strong>
+                                <field name="ostax_calc_count_today"
+                                       readonly="1" nolabel="1"/>
+                                (debug log must be on)
+                            </div>
+                            <div class="text-muted" style="font-size: 0.9em;">
+                                <strong>Failure streak:</strong>
+                                <field name="ostax_failure_streak"
+                                       readonly="1" nolabel="1"/>
+                                consecutive (resets on next success)
+                            </div>
+                        </div>
+                    </setting>
+
+                    <setting id="ostax_alert_threshold_setting"
+                             string="Alert after N consecutive failures"
+                             help="When the engine fails this many times in a row, the connector posts a mail.activity warning to the configured recipients. Default 5."
+                             invisible="not ostax_enabled">
+                        <field name="ostax_failure_streak_threshold"/>
+                    </setting>
+
+                    <setting id="ostax_alert_recipients_setting"
+                             string="Engine outage alert recipients"
+                             help="Users who get a mail.activity warning when the failure streak crosses the threshold. Leave empty to disable activity-based alerting."
+                             invisible="not ostax_enabled">
+                        <field name="ostax_admin_alert_recipient_ids"
+                               widget="many2many_tags"/>
+                    </setting>
+
                     <setting id="ostax_disclaimer_setting"
                              invisible="not ostax_enabled">
                         <div class="text-muted" style="font-size: 0.85em;">

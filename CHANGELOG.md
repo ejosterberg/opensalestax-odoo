@@ -10,6 +10,57 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.2.1] — 2026-05-08
+
+### Added
+
+- **Operator-experience telemetry & alerts.** When the engine is
+  silently fail-soft falling back to catalog rates, merchants
+  often don't realize until they reconcile a tax report. v0.2.1
+  surfaces the signals:
+
+  - ``ostax_last_successful_calc_at`` (Datetime, readonly) —
+    timestamp of the most recent successful engine call. Stale
+    or unset means the engine hasn't been talking lately.
+  - ``ostax_failure_streak`` (Integer, readonly) — consecutive
+    engine failures since the last success. Resets on next
+    success.
+  - ``ostax_failure_streak_threshold`` (Integer, default 5) —
+    when the streak crosses this, the connector posts a
+    ``mail.activity`` warning to ``ostax_admin_alert_recipient_ids``.
+  - ``ostax_admin_alert_recipient_ids`` (Many2many res.users) —
+    who gets the activity. Empty disables alerting (counter
+    still works).
+  - ``ostax_calc_count_today`` (Integer, computed) — count of
+    engine calls logged today (requires debug log on).
+
+  All five surfaced on the settings page under a new "Engine
+  telemetry" block.
+
+- **Bulk recompute server action.** Added
+  ``account.move.action_ostax_bulk_recompute_drafts`` plus the
+  ``ir.actions.server`` registration that exposes it under the
+  Action menu on ``account.move`` list views. Useful after a
+  rate-table change on the engine side: filter Bills → All →
+  state=Draft and run "OpenSalesTax: bulk recompute drafts" to
+  refresh every draft's tax breakdown without opening each one.
+  Skips moves that aren't draft or don't engage OST; reports a
+  one-line summary.
+
+### Changed
+
+- All engine-call sites (batch path + legacy ``compute_all``
+  path) now record success/failure into the new telemetry
+  fields. Best-effort posting — a notification failure never
+  breaks the calling tax-compute flow.
+
+### Tests
+
+- 6 new tests in ``test_operator_ux.py`` covering streak
+  increment/reset, threshold-crossing activity post,
+  no-recipient handling, calc-count-today, bulk-recompute
+  empty-recordset shape.
+
 ## [v0.2.0] — 2026-05-08
 
 ### Added
