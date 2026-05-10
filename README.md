@@ -29,48 +29,81 @@ Pick the branch matching your Odoo install. Releases are independent per branch.
 
 ## What you get
 
+**Sales-tax pipeline:**
+
 - Sales orders, customer invoices, credit notes/refunds, POS — all with
   destination-based per-jurisdiction US tax
-- Per-jurisdiction breakdown stored on every move (state / county / city /
-  district), rendered on the form view for full audit trail
-- **Per-product taxability category** (`product.template.ostax_category` —
-  general / clothing / groceries / prescription_drugs / prepared_food /
-  digital_goods); engine applies per-state taxability rules (e.g. Minnesota
-  exempts clothing, New York taxes prepared food differently than
-  groceries)
-- **Per-category default with parent-walk inheritance** — mark "Apparel"
-  as `clothing` once on `product.category`, every product underneath
-  inherits unless overridden. Closest-ancestor wins.
+- Per-jurisdiction breakdown stored on every move, sale order, and POS
+  order (state / county / city / district), rendered as an
+  *OpenSalesTax* notebook tab for full audit trail
+- Line-level OST jurisdiction tags persisted on posted invoices
+- Refunds (`out_refund`) sign-flip via Odoo's standard refund flow,
+  preserving the OST breakdown
+
+**Configuration & nexus control:**
+
+- **Per-state nexus filter** — if you only collect tax in MN and WI,
+  set those two states on the company; out-of-state customers fall
+  through to catalog rates without an engine call (no nexus list =
+  engage in all 50 states, the default)
+- **Per-product taxability category** (`product.template.ostax_category`
+  — general / clothing / groceries / prescription_drugs / prepared_food
+  / digital_goods); engine applies per-state taxability rules (e.g.
+  Minnesota exempts clothing, New York taxes prepared food differently
+  than groceries)
+- **Per-category default with parent-walk inheritance** — mark
+  "Apparel" as `clothing` once on `product.category`, every product
+  underneath inherits unless overridden. Closest-ancestor wins.
+- Customer exemption certificates on `res.partner`
+- Fiscal-position interop — non-US partners route through Odoo's
+  standard "Export" mapping; the connector only engages for US shipping
+  addresses
+- Multi-company support — settings scoped per company
+
+**Vendor side (opt-in):**
+
+- **Use-tax accrual on vendor bills** — when enabled, vendor bills
+  with US partners route through the engine using the BUYER's ZIP
+  (your nexus location), producing synthetic purchase-typed taxes
+  that credit your **Use Tax Payable** account. Default OFF; existing
+  users see no behavior change on upgrade.
+
+**Operator experience:**
+
+- **Engine telemetry on the settings page** — last successful calc
+  timestamp, current failure streak, calls today
+- **Outage alerts** — after N consecutive engine failures
+  (configurable), a `mail.activity` warning is posted to admin
+  recipients. Catches silent fail-soft fallback before it shows up in
+  a tax-report reconciliation surprise.
+- **Bulk recompute action** — "OpenSalesTax: bulk recompute drafts"
+  on the `account.move` list view's Action menu. Useful after an
+  engine rate-table change.
+
+**Performance & reliability:**
+
 - **Per-worker engine-response cache** (~1 hour sliding TTL) — repeat
   calculations within the same hour for the same line shape skip the
-  engine. Helpful for batch invoicing, recurring orders, multi-line carts.
-- Customer exemption certificates on `res.partner`
-- Multi-company support — settings scoped per company
-- Fiscal-position interop — non-US partners route through Odoo's standard
-  "Export" mapping; the connector only engages for US shipping addresses
-- Settings page with engine connection test, fail-soft toggle
-- Optional admin debug log of recent calculations
-- Optional 90-day archive cron for jurisdictions you've stopped shipping to
+  engine. Helpful for batch invoicing, recurring orders, multi-line
+  carts.
+- **Fail-soft policy** — when the engine is unreachable or returns
+  5xx, the connector falls back to catalog rates and logs a warning
+  (configurable; can also surface as `UserError` for fail-hard)
+- Optional admin debug log of recent calculations (50-entry ring
+  buffer)
+- Optional 90-day archive cron for jurisdictions you've stopped
+  shipping to
 
-## Vendor bills (use-tax accrual) — v0.2.0
+## Roadmap (v0.4 candidates)
 
-When ``Accrue use tax on vendor bills`` is ON in the company settings,
-vendor bills with US partners route through the engine using the
-BUYER's ZIP (your nexus location), producing synthetic purchase-typed
-taxes that credit your **Use Tax Payable** account.
-
-Default is **OFF** — existing v0.1.x users see no behavior change on
-upgrade. To enable: set the **Use-tax address** to your nexus partner,
-configure the **Use Tax Payable account**, then toggle the setting on.
-See `CHANGELOG.md` v0.2.0 for the full migration walkthrough.
-
-## What's deferred to v0.3
-
-- **POS live-quote.** Server-authoritative compute on order close
-  works; per-line live JS-side round-trip on each line-add is a
-  v0.3 enhancement.
-- **OCA upstream submission** to ``OCA/account-fiscal-rule``
-  (relicense to AGPL-3 dual at submission time).
+- **OCA upstream submission** to ``OCA/account-fiscal-rule`` (relicense
+  to AGPL-3 dual at submission time)
+- **Tax-report integration** — pre-built "OST tax accrual" report
+  that splits sales/use × per-jurisdiction × month-end totals
+- **POS live-quote** — JS-side round-trip on each line-add for
+  accurate cashier preview (server-authoritative compute on order
+  close already works)
+- **i18n** — `.po` skeleton + es_US locale
 
 ## Install
 
@@ -120,8 +153,25 @@ After install, in **Settings → Accounting → OpenSalesTax**:
    than blocking invoice posting. Switch off once you trust
    connectivity.
 
-That's it for sales tax. Create a US customer with a 5-digit ZIP, add a
-sale order or invoice, and the connector engages automatically.
+That's it for sales tax. Create a US customer with a 5-digit ZIP, add
+a sale order or invoice, and the connector engages automatically.
+
+**Recommended next steps after the basics work:**
+
+5. **States with nexus** — if you only collect tax in a subset of
+   states, list them here. Out-of-state US customers will fall
+   through to catalog rates (no engine call). Empty = engage
+   everywhere. *Optional; the default works for "we collect
+   nationwide" merchants.*
+6. **Engine outage alert recipients** — pick the users who should
+   get a `mail.activity` warning if the engine fails 5+ consecutive
+   times in a row. Catches silent fail-soft before it surfaces in
+   tax reporting. *Strongly recommended for production deployments.*
+7. **Vendor bills (use-tax accrual)** — turn on if your business has
+   nexus in multiple states and accrues use tax on out-of-state
+   purchases. Requires picking a *Use Tax Payable* liability
+   account. *Off by default — flip on only if you understand use-tax
+   filing on your state returns.*
 
 ## Configuring per-product / per-category taxability
 
@@ -150,10 +200,27 @@ the OpenSalesTax engine via the [Python
 SDK](https://pypi.org/project/opensalestax/) and replaces the static
 catalog rate with a per-jurisdiction breakdown.
 
-Non-US partners fall through to Odoo's standard fiscal-position
-handling. Vendor bills and other inbound moves currently bypass the
-connector (use-tax accrual lands in v0.2 — see "What's deferred to v0.2"
-above).
+Synthetic taxes are materialized lazily, one per
+`(company × jurisdiction-name × jurisdiction-type × type_tax_use)` —
+your chart accumulates new tax records only when the engine reports
+new jurisdictions on a real transaction. Sale-side and use-side
+synthetics for the same jurisdiction stay in separate records so
+they don't pollute each other's tax reports.
+
+**Engagement gates** (all must pass):
+
+- Company has `ostax_enabled` and an engine URL configured
+- Customer's `country_id` is the US
+- Customer's `zip` is at least 5 numeric digits
+- Customer's `state_id` is in the configured nexus list (when set)
+- Currency is USD (engine is USD-only by design)
+
+Non-US partners and any of those gates failing → the line falls
+through to Odoo's standard catalog-rate handling.
+
+**Vendor bills** route the same way IF the company has opted in to
+use-tax accrual; otherwise inbound moves bypass the connector
+entirely and use Odoo's catalog-rate handling.
 
 ## Engine compatibility
 
@@ -172,7 +239,15 @@ connector will need a corresponding bump.
 **"Test Connection" works but invoices don't engage.** Check that the
 customer has `country_id = United States` and a 5-digit-or-longer
 `zip`. Non-US customers and US customers with malformed ZIPs route to
-Odoo's standard fiscal-position handling — not an OST bug.
+Odoo's standard fiscal-position handling — not an OST bug. Also
+check the **States with nexus** setting: if it's set and the customer
+isn't in one of those states, the connector intentionally bypasses.
+
+**Customer has the right state and ZIP but still falls through.**
+If you set **States with nexus** but the customer record has no
+`state_id` (only a country + ZIP), the connector conservatively
+bypasses — it can't verify in-nexus without a state record. Either
+populate `state_id` on the customer or unset the nexus list.
 
 **Tax appears as `Tax 15%` (or your chart's default).** You're on
 v0.1.2 or earlier, before per-type tax groups landed. Upgrade to
@@ -197,6 +272,21 @@ customer probably has an OST exemption certificate set
 (`res.partner` → *OST exemption* tab). Exempt partners short-circuit
 to zero tax with no engine call.
 
+**Engine looks down but no one notices for days.** Configure
+**Engine outage alert recipients** on the settings page and set the
+**Alert after N consecutive failures** threshold (default 5). After
+N failures in a row, the connector posts a `mail.activity` warning
+to each recipient — once per threshold-crossing edge, no spam if the
+streak keeps climbing. Also watch the read-only **Last successful
+call** timestamp on the settings page; a stale value is the early
+warning.
+
+**Need to refresh tax on a batch of drafts after an engine
+rate-table update.** Filter `account.move` to `state=Draft`, select
+the batch, and run **Action → OpenSalesTax: bulk recompute drafts**.
+Skips moves that aren't draft or don't engage OST; reports a
+one-line summary.
+
 ## Calculation only
 
 > Tax calculations are provided as-is for convenience. The merchant is
@@ -215,27 +305,10 @@ co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status
 
-**Production-grade across all four Odoo majors.** v0.2.0 is shipping
-on PyPI as `odoo-addon-account-ostax==<branch>.0.2.0` for 16.0,
+**Production-grade across all four Odoo majors.** v0.3.1 is shipping
+on PyPI as `odoo-addon-account-ostax==<branch>.0.3.1` for 16.0,
 17.0, 18.0, and 19.0. Per-branch test workflows green on every
-branch; 58 unit tests pass on real Odoo + Postgres in Docker.
-
-What works on every branch:
-
-- Real destination-based per-jurisdiction US sales tax on every
-  customer invoice, sale order, credit note (state / county / city /
-  district splits in the totals area)
-- Line-level OST jurisdiction tags persisted on posted invoices
-- Engine audit JSON captured on `_post()` (engine version, calc
-  timestamp, full per-jurisdiction detail)
-- Per-product + per-category OST taxability mapping
-- Per-worker engine-response cache (~1h sliding TTL)
-- Customer exemption certificate handling
-- Multi-company isolation
-- Settings page + Test Connection action
-- Optional admin debug log
-- Optional 90-day archive cron for jurisdictions you've stopped
-  shipping to
+branch; 68 unit tests pass on real Odoo + Postgres in Docker.
 
 How it's wired:
 
