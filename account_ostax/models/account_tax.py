@@ -138,12 +138,22 @@ class AccountTax(models.Model):
         if currency and getattr(currency, "name", None) and currency.name != "USD":
             return  # leave for super() to use catalog rate
 
+        # Per-line skip override (v0.3.5). When a merchant has flagged
+        # this specific line with ``ostax_skip=True``, bypass the
+        # engine entirely and let Odoo's standard catalog-rate handling
+        # apply. Use case: rare engine error on one line, legacy data
+        # ingest, or one-off manual override without disabling OST
+        # for the entire move.
+        record = base_line.get("record")
+        if record is not None and getattr(record, "_name", None) == "account.move.line":
+            if getattr(record, "ostax_skip", False):
+                return
+
         # Resolve direction (outbound = sales tax, inbound = use tax).
         # Inbound use-tax accrual (v0.2) uses the BUYER's ZIP, not the
         # partner's (vendor's). When the company hasn't opted in to
         # use-tax accrual, inbound moves bypass entirely (same as
         # v0.1.15 behavior).
-        record = base_line.get("record")
         is_inbound = False
         if record is not None and getattr(record, "_name", None) == "account.move.line":
             move_type = getattr(getattr(record, "move_id", None), "move_type", "")

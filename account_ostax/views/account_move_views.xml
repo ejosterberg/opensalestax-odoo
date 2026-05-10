@@ -32,6 +32,17 @@
                 </page>
             </xpath>
 
+            <!-- v0.3.5: surface ``ostax_skip`` as an optional column on
+                 the invoice-lines list so power users can toggle the
+                 OST escape hatch per-line. Hidden by default; users
+                 enable via the column-visibility menu. -->
+            <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='name']"
+                   position="after">
+                <field name="ostax_skip"
+                       optional="hide"
+                       string="Skip OST"/>
+            </xpath>
+
         </field>
     </record>
 </odoo>
