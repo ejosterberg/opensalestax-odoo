@@ -10,6 +10,41 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.1] — 2026-05-08
+
+### Changed
+
+Pure documentation update; no code changes. The PyPI front-page
+description was lagging behind actual capabilities — Status section
+still showed v0.2.0 / 58 tests, "What's deferred to v0.3" still
+listed POS live-quote (now a v0.4 candidate), and v0.2.1 (operator
+telemetry, mail.activity alerts, bulk recompute) and v0.3.0
+(per-state nexus filter, sale.order/pos.order audit tabs) weren't
+mentioned at all on the page merchants land on after a `pip search`.
+
+README rewrites:
+
+- **What you get** — restructured into four labeled groups
+  (Sales-tax pipeline, Configuration & nexus control, Vendor side
+  opt-in, Operator experience, Performance & reliability). Adds:
+  per-state nexus filter, sale.order/pos.order audit tabs, engine
+  telemetry, outage alerts, bulk recompute action.
+- **Quick start** — extended from 4 to 7 steps. New steps cover
+  states-with-nexus, outage-alert recipients, vendor-bill use-tax
+  accrual (with explicit "off by default" guidance).
+- **How it works** — fixed stale reference to a "What's deferred to
+  v0.2" section that no longer existed (vendor bills shipped in
+  v0.2.0). Added engagement-gate list and synthetic-tax
+  materialization explainer. Vendor-bill behavior described
+  accurately (opt-in, off by default).
+- **Roadmap (v0.4 candidates)** — replaces the old "What's deferred
+  to v0.3" section. Lists OCA submission, tax-report integration,
+  POS live-quote, i18n.
+- **Troubleshooting** — added two new entries (nexus-state customer
+  with no `state_id`; engine outage alerts setup); refreshed the
+  vendor-bills entry; added a bulk-recompute walkthrough.
+- **Status** — bumped from v0.2.0 / 58 tests to v0.3.1 / 68 tests.
+
 ## [v0.3.0] — 2026-05-08
 
 ### Added
