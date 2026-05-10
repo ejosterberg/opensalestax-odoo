@@ -10,6 +10,26 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.4.1] — 2026-05-10
+
+### Added
+
+- **OCA static description assets** —
+  ``account_ostax/static/description/``:
+  - ``icon.png`` — 128×128 placeholder icon (Odoo purple
+    background, white "$" glyph). Polished enough for the Apps
+    menu; reviewers can suggest a designed icon during the OCA
+    PR review.
+  - ``index.html`` — hand-crafted static description page mirroring
+    the README's hero / feature list / install / engine compat /
+    license sections. OCA's ``oca-gen-addon-readme`` tool will
+    regenerate this from ``readme/*.rst`` during the upstream PR;
+    this version serves the as-distributed PyPI install today.
+
+These files appear in the Apps menu after install, giving the
+connector a polished first-impression card alongside other Odoo
+addons.
+
 ## [v0.4.0] — 2026-05-10
 
 ### Changed
