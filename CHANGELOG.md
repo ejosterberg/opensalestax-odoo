@@ -10,6 +10,35 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.2] — 2026-05-08
+
+### Changed
+
+Pure documentation update; no code changes. Companion to v0.3.1's
+README refresh — extends the audit to the OCA-style
+``readme/CONFIGURE.rst`` (rendered into the OCA ``README.rst``
+build by setuptools-odoo) and the GitHub-rendered governance
+docs.
+
+- ``readme/CONFIGURE.rst`` rewritten end-to-end. The old version
+  documented "Origin address" (renamed to "Use-tax address (buyer
+  location)" in v0.2.0), missing nexus, vendor-bill, telemetry,
+  alert, category-mapping, and bulk-recompute sections, and
+  incorrectly claimed the engine applies exemption logic (the
+  connector short-circuits client-side; engine never sees exempt
+  partners). New structure: minimum config → recommended nexus
+  filter → recommended outage alerts → opt-in vendor bills →
+  per-product / per-category mapping → exemptions → multi-company
+  → other settings → bulk recompute action.
+- ``CONTRIBUTING.md`` branch table updated to include 19.0
+  (was 16/17/18 only). Added a note that the maintainer typically
+  lands patches on 18.0 first then cherry-picks to the other three.
+- ``SECURITY.md`` "Affected branch(es)" prompt and "Supported
+  versions" list updated to include 19.0. Refreshed the "thin
+  override of compute_all" claim — the module now overrides both
+  ``compute_all`` (16/17) and ``_add_tax_details_in_base_lines``
+  (18+).
+
 ## [v0.3.1] — 2026-05-08
 
 ### Changed

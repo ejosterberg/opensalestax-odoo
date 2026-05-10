@@ -5,7 +5,7 @@
 Email **ejosterberg@gmail.com** with subject line starting
 `[opensalestax-odoo] security:`. Include:
 
-- Affected branch(es) (16.0 / 17.0 / 18.0)
+- Affected branch(es) (16.0 / 17.0 / 18.0 / 19.0)
 - Reproduction steps
 - Expected vs actual behavior
 - Impact (read access? write access? RCE? data exposure?)
@@ -21,13 +21,15 @@ subject with `[critical]` and expect faster turnaround.
 
 ## Supported versions
 
-Each branch (16.0, 17.0, 18.0) gets security patches independently. Use
-the branch matching your Odoo install. There is no `main` branch.
+Each branch (16.0, 17.0, 18.0, 19.0) gets security patches independently.
+Use the branch matching your Odoo install. There is no `main` branch.
 
 ## Security posture
 
-The module is a thin override of `account.tax.compute_all` plus settings
-fields. The attack surface is small but real:
+The module is a thin override of Odoo's tax computation entry points
+(`account.tax._add_tax_details_in_base_lines` on 18+, `compute_all`
+on 16/17) plus settings fields, telemetry, and a few view extensions.
+The attack surface is small but real:
 
 - **The settings page accepts a merchant-supplied `ostax_api_url`.** This
   becomes the base URL for HTTP calls from the Odoo server. Merchants are
