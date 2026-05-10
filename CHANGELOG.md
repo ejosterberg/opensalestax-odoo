@@ -10,6 +10,42 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.4] — 2026-05-08
+
+### Added
+
+- **Audit tab now displays a readable breakdown table** instead of
+  raw JSON only. Non-developer accountants can finally read the
+  per-jurisdiction breakdown without parsing
+  ``{"jurisdictions":[{"name":...}]}``. The audit notebook tab on
+  ``account.move``, ``sale.order``, and ``pos.order`` now shows:
+
+  - **Header summary** — engine version, subtotal, tax total
+  - **Per-line breakdown** — each line's amount, category,
+    effective rate, tax total, optional note
+  - **Per-jurisdiction table** — name / type / rate / tax,
+    with right-aligned tabular figures
+  - **Raw audit JSON** still preserved below the rendered view
+    for debugging / programmatic access
+
+  All values escaped server-side; no XSS risk from tampered
+  breakdown data.
+
+- New computed Html field ``ostax_breakdown_pretty`` on each of
+  the three audit-bearing models. Lazy-computed from the existing
+  ``ostax_breakdown`` Text field; not stored.
+
+- New module ``account_ostax/models/_breakdown_html.py`` with a
+  pure ``breakdown_to_html(json_str) -> html_str`` function.
+  Independent of Odoo internals; trivially testable.
+
+### Tests
+
+- 7 new tests in ``test_breakdown_html.py`` covering: empty input,
+  unparseable JSON fallback, full-breakdown rendering, XSS
+  escaping, empty jurisdictions, no-lines case, and end-to-end
+  field compute on a real ``account.move``.
+
 ## [v0.3.3] — 2026-05-08
 
 ### Added
