@@ -47,6 +47,22 @@ class AccountMove(models.Model):
         readonly=True,
         copy=False,
     )
+    ostax_breakdown_pretty = fields.Html(
+        string="OST breakdown (rendered)",
+        compute="_compute_ostax_breakdown_pretty",
+        sanitize=False,  # safe: HTML is generated server-side from
+                         # our own escaped template, not user input
+        help=(
+            "v0.3.4 — readable HTML rendering of ``ostax_breakdown`` "
+            "for the audit tab. Computed from the raw JSON; not "
+            "stored. Engine version + per-jurisdiction table."
+        ),
+    )
+
+    def _compute_ostax_breakdown_pretty(self) -> None:
+        from ._breakdown_html import breakdown_to_html
+        for rec in self:
+            rec.ostax_breakdown_pretty = breakdown_to_html(rec.ostax_breakdown)
 
     # ------------------------------------------------------------------
     # Lifecycle hook — capture breakdown on post
