@@ -30,9 +30,10 @@ class TestBreakdownToHtml(TransactionCase):
         )
         result = breakdown_to_html("{not valid json")
         self.assertIn("<pre>", result)
-        # Must escape the input to avoid XSS via tampered data
-        self.assertIn("&lt;", result.replace("<pre>", ""))  # nothing to escape here
         self.assertIn("not valid json", result)
+        # XSS escaping on the fallback path is covered separately in
+        # test_xss_in_jurisdiction_name_is_escaped — no chars to
+        # escape in this benign-junk input.
 
     def test_full_breakdown_renders_table(self) -> None:
         from odoo.addons.account_ostax.models._breakdown_html import (
