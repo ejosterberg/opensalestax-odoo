@@ -10,6 +10,40 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.5] — 2026-05-10
+
+### Added
+
+- **Per-line OST skip override.** New
+  ``account.move.line.ostax_skip`` Boolean (default ``False``).
+  When set on a specific line, the connector bypasses the engine
+  for that line and lets Odoo's standard catalog-rate handling
+  apply. Use cases:
+
+  - The engine returns a wrong rate for one specific line (rare
+    edge case the engine hasn't been told about yet) and the
+    merchant wants to override manually.
+  - Bringing in legacy data with pre-computed taxes that
+    shouldn't be re-routed through the engine.
+  - One-off manual override on a problem invoice without
+    disabling OST for the entire move.
+
+  Wired into ``_ostax_inject_into_base_line`` as the first gate
+  after the multi-currency check — flagged lines bypass before
+  any engine engagement logic runs.
+
+- View extension: ``ostax_skip`` surfaced as an optional column
+  on the invoice-lines list inside the move form. Hidden by
+  default (``optional="hide"``); power users enable via the
+  column-visibility menu so the common case stays clean.
+
+### Tests
+
+- 4 new tests in ``test_line_skip.py`` covering: default ``False``
+  field value, skip=True bypasses the batch-engine path,
+  skip=False engages normally, field persistence smoke test
+  (verifies the field exists and is correctly typed).
+
 ## [v0.3.4] — 2026-05-08
 
 ### Added
