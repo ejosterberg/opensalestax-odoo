@@ -24,7 +24,10 @@
                                     class="btn-secondary"/>
                         </group>
                     </group>
-                    <separator string="Per-jurisdiction breakdown (audit JSON)"/>
+                    <separator string="Per-jurisdiction breakdown"/>
+                    <field name="ostax_breakdown_pretty"
+                           readonly="1" nolabel="1"/>
+                    <separator string="Raw audit JSON (for debugging)"/>
                     <field name="ostax_breakdown" readonly="1" widget="text"/>
                 </page>
             </xpath>
