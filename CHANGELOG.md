@@ -10,6 +10,45 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.4.0] — 2026-05-10
+
+### Changed
+
+- **Dual-licensed** the entire codebase under
+  ``LGPL-3.0-or-later OR AGPL-3.0-or-later`` (recipient picks).
+  The project's constitution §3 carve-out authorized this from
+  the start; v0.4.0 is the formal switch in preparation for
+  OCA upstream submission to
+  [`OCA/account-fiscal-rule`](https://github.com/OCA/account-fiscal-rule),
+  which requires AGPL-3.
+
+  - New top-level ``LICENSE`` file declares the dual license and
+    points to the two full-text files.
+  - ``LICENSE-LGPL.txt`` — full LGPL-3.0 text (was the previous
+    ``LICENSE``).
+  - ``LICENSE-AGPL.txt`` — full AGPL-3.0 text (canonical from
+    GNU).
+  - All 35 source-file SPDX headers updated from
+    ``LGPL-3.0-or-later`` to
+    ``LGPL-3.0-or-later OR AGPL-3.0-or-later``.
+  - ``CONTRIBUTING.md`` license section rewritten to reflect
+    dual-license intent. Contributors agree their contributions
+    are licensed under both options.
+  - ``README.md`` license badge + section updated.
+  - ``pyproject.toml`` adds the AGPL classifier alongside
+    LGPL; the SPDX expression is the new ``license`` value.
+
+  The Odoo ``__manifest__.py`` ``license`` field stays at
+  ``LGPL-3`` for the as-distributed PyPI default (more permissive
+  for self-hosted embedding). The OCA submission will flip it to
+  ``AGPL-3`` in that copy.
+
+- ``development_status`` promoted from ``Alpha`` to ``Beta``.
+  The connector has been shipping in production-grade shape for
+  multiple weeks across all four Odoo majors; 84 unit tests;
+  23 releases on PyPI; live UX validated. Beta = production-ready,
+  but the API surface may still evolve based on OCA review feedback.
+
 ## [v0.3.5] — 2026-05-10
 
 ### Added

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later -->
 <odoo>
     <!-- v0.3.0 — surface the OST audit fields on pos.order so the
          per-jurisdiction breakdown is visible from the back-office

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- SPDX-License-Identifier: LGPL-3.0-or-later -->
+<!-- SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later -->
 <odoo noupdate="1">
 
     <record id="cron_ostax_archive_unused_synthetics" model="ir.cron">

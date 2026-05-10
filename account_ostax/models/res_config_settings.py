@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Settings page wiring — exposes res.company.ostax_* fields under
 Settings → Accounting → OpenSalesTax.
 
