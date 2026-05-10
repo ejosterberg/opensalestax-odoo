@@ -20,3 +20,13 @@ class SaleOrder(models.Model):
         readonly=True,
         copy=False,
     )
+    ostax_breakdown_pretty = fields.Html(
+        string="OST breakdown (rendered)",
+        compute="_compute_ostax_breakdown_pretty",
+        sanitize=False,  # server-rendered, all values escaped
+    )
+
+    def _compute_ostax_breakdown_pretty(self) -> None:
+        from ._breakdown_html import breakdown_to_html
+        for rec in self:
+            rec.ostax_breakdown_pretty = breakdown_to_html(rec.ostax_breakdown)

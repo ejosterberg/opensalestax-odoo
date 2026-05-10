@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from . import test_breakdown_html
 from . import test_compute_all
 from . import test_nexus_filter
 from . import test_operator_ux

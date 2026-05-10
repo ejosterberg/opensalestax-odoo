@@ -26,3 +26,13 @@ class PosOrder(models.Model):
         copy=False,
         help="True if the rate was retrieved from cache while the engine was unreachable.",
     )
+    ostax_breakdown_pretty = fields.Html(
+        string="OST breakdown (rendered)",
+        compute="_compute_ostax_breakdown_pretty",
+        sanitize=False,  # server-rendered, all values escaped
+    )
+
+    def _compute_ostax_breakdown_pretty(self) -> None:
+        from ._breakdown_html import breakdown_to_html
+        for rec in self:
+            rec.ostax_breakdown_pretty = breakdown_to_html(rec.ostax_breakdown)
