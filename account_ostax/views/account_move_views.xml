@@ -32,6 +32,20 @@
                 </page>
             </xpath>
 
+            <!-- v0.3.5: surface ``ostax_skip`` as an optional column on
+                 the invoice-lines list so power users can toggle the
+                 OST escape hatch per-line. Hidden by default; users
+                 enable via the column-visibility menu.
+                 Uses ``//`` so the xpath matches whether the subview
+                 wrapper is ``<tree>`` (Odoo 16/17) or ``<list>``
+                 (Odoo 18+). -->
+            <xpath expr="//field[@name='invoice_line_ids']//field[@name='name']"
+                   position="after">
+                <field name="ostax_skip"
+                       optional="hide"
+                       string="Skip OST"/>
+            </xpath>
+
         </field>
     </record>
 </odoo>
