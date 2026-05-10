@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Opt-in admin debug log of recent OST calculations.
 
 Capped at 50 entries per company; oldest pruned on insert. Disabled by

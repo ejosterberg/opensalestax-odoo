@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Render the engine's per-jurisdiction breakdown JSON as a readable
 HTML table. v0.3.4 — replaces the raw-JSON display in audit tabs.
 

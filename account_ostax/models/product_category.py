@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Category-level OST tax-category default.
 
 Adds an ``ostax_category`` field to ``product.category`` so a

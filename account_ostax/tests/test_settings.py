@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Phase 3 — settings + connection-test action."""
 
 from __future__ import annotations

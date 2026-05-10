@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Per-product OST tax-category override.
 
 Adds an ``ostax_category`` field to ``product.template`` so a

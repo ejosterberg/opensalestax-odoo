@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.3.0 — per-state nexus filter on res.company.
 
 When ``ostax_nexus_state_ids`` is set, the connector only engages

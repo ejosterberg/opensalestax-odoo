@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Per-line OST escape hatch (v0.3.5).
 
 Adds an ``ostax_skip`` Boolean to ``account.move.line``. When set
