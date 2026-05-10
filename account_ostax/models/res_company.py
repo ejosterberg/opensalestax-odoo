@@ -374,20 +374,96 @@ class ResCompany(models.Model):
                 _("Unexpected error"), str(e), "danger"
             )
 
-        return self._ostax_notification(
-            _("Connection OK"),
-            _(
-                "Engine v%(version)s · status=%(status)s · "
-                "DB %(db)s · RTT %(rtt)d ms"
+        engine_line = _(
+            "Engine v%(version)s · status=%(status)s · "
+            "DB %(db)s · RTT %(rtt)d ms"
+        ) % {
+            "version": health.version,
+            "status": health.status,
+            "db": "OK" if health.database_connected else "DOWN",
+            "rtt": rtt_ms,
+        }
+        config_summary, hard_warnings = self._ostax_config_summary()
+        message = engine_line + "\n\n" + config_summary
+        # Surface as warning (yellow) when the engine itself is OK but
+        # config has a hard footgun (e.g. accrue_use_tax on with no
+        # payable account configured — next vendor bill will raise
+        # UserError). Surface as success (green) when engine is OK and
+        # no hard warnings. Soft hints (no alert recipients, default
+        # buyer-location fallback) don't escalate.
+        kind = "success" if (health.status == "ok" and not hard_warnings) else "warning"
+        return self._ostax_notification(_("Connection OK"), message, kind)
+
+    def _ostax_config_summary(self) -> tuple[str, bool]:
+        """Return ``(human-readable summary, has_hard_warnings)`` for
+        the Test Connection result.
+
+        Surfaces config readiness so merchants catch onboarding
+        footguns before they hit the calc path. The ``has_hard_warnings``
+        flag is True only for config errors that will *break* future
+        calls (e.g. ``accrue_use_tax`` on but no payable account →
+        next vendor-bill post raises ``UserError``). Soft hints
+        (no alert recipients, default buyer-location fallback) are
+        informational and don't escalate the notification kind.
+        """
+        self.ensure_one()
+        lines: list[str] = []
+        hard_warnings = False
+
+        # Nexus footprint (informational)
+        if self.ostax_nexus_state_ids:
+            codes = ", ".join(
+                sorted(s.code for s in self.ostax_nexus_state_ids if s.code)
             )
-            % {
-                "version": health.version,
-                "status": health.status,
-                "db": "OK" if health.database_connected else "DOWN",
-                "rtt": rtt_ms,
-            },
-            "success" if health.status == "ok" else "warning",
+            lines.append(_("Nexus: %s") % codes)
+        else:
+            lines.append(_("Nexus: all 50 states"))
+
+        # Use-tax accrual readiness — HARD warning if account missing
+        if self.ostax_accrue_use_tax:
+            if self.ostax_use_tax_payable_account_id:
+                acct = self.ostax_use_tax_payable_account_id
+                lines.append(
+                    _("Use-tax accrual: ON (payable: %s ✓)") % acct.code
+                )
+            else:
+                hard_warnings = True
+                lines.append(_(
+                    "Use-tax accrual: ON (payable: ✗ NOT SET — "
+                    "next vendor bill will raise UserError)"
+                ))
+            if self.ostax_origin_address_id:
+                lines.append(
+                    _("  buyer location: %s") % self.ostax_origin_address_id.name
+                )
+            else:
+                lines.append(_(
+                    "  buyer location: company main address (default)"
+                ))
+        else:
+            lines.append(_("Use-tax accrual: off"))
+
+        # Fail-soft posture (informational)
+        lines.append(
+            _("Fail-soft: %s") % (_("on") if self.ostax_fail_soft else _("off (strict)"))
         )
+
+        # Outage alerts — soft hint only (don't escalate the notification)
+        n_recipients = len(self.ostax_admin_alert_recipient_ids)
+        if n_recipients:
+            lines.append(
+                _("Outage alerts: %(n)d recipient(s) at %(t)d failures") % {
+                    "n": n_recipients,
+                    "t": self.ostax_failure_streak_threshold or 0,
+                }
+            )
+        else:
+            lines.append(_(
+                "Outage alerts: no recipients configured "
+                "(recommended for production)"
+            ))
+
+        return "\n".join(lines), hard_warnings
 
     @staticmethod
     def _ostax_notification(title: str, message: str, kind: str) -> dict[str, Any]:
