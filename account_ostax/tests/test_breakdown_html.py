@@ -7,7 +7,9 @@ import json
 
 from odoo.tests.common import TransactionCase, tagged
 
-from .._breakdown_html import breakdown_to_html  # noqa: F401 (loaded via models pkg)
+# Note: each test method imports `breakdown_to_html` fresh from
+# the absolute path so this file imports cleanly regardless of
+# how Odoo's test loader resolves relative imports.
 
 
 @tagged("post_install", "-at_install")
