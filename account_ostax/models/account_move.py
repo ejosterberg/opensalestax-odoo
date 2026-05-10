@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """account.move OST breakdown — captured on _post() and surfaced on the form.
 
 Phase 5 hooks ``account.move._post()`` to capture the per-jurisdiction

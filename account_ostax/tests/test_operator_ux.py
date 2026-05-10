@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.2.1 — operator-experience telemetry & bulk recompute.
 
 The connector tracks engine successes/failures at the company

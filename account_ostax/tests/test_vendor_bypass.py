@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.1.15 — defensive bypass on vendor bills + purchase taxes (default).
 
 When the company has NOT opted in to use-tax accrual (the v0.2.0

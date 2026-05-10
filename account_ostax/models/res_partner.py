@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Customer-side exemption certificate fields.
 
 Phase 7 wires these into the calc payload sent to the engine.

@@ -1,11 +1,11 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 {
     "name": "OpenSalesTax — US Sales Tax via OST API",
     "summary": (
         "Replace static US sales-tax rates with destination-based "
         "lookups against an OpenSalesTax engine instance."
     ),
-    "version": "18.0.0.3.5",
+    "version": "18.0.0.4.0",
     "category": "Accounting/Localizations",
     "website": "https://github.com/ejosterberg/opensalestax-odoo",
     "author": "Eric Osterberg",
@@ -34,5 +34,10 @@
     "installable": True,
     "application": False,
     "auto_install": False,
-    "development_status": "Alpha",
+    # v0.4.0 — promoted from Alpha to Beta. The connector has been
+    # shipping in production-grade shape for ~weeks across all four
+    # Odoo majors (84 unit tests; 23 releases on PyPI; live UX
+    # validated). Beta = production-ready, but the API surface may
+    # still evolve based on OCA review feedback.
+    "development_status": "Beta",
 }

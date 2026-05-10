@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.1.13 + v0.1.14 — per-product and per-category OST tax-category mapping."""
 
 from __future__ import annotations
