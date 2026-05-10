@@ -10,6 +10,42 @@ Each branch ships independent tags. Tag format is `<NN.0>-vX.Y.Z`
 (e.g. `18.0-v0.1.15`). The notes below cover all four branches
 unless a version is branch-specific.
 
+## [v0.3.3] — 2026-05-08
+
+### Added
+
+- **Test Connection now reports config readiness** alongside engine
+  health. The success notification message gains a multi-line
+  config summary:
+
+  - **Nexus** — list of state codes if scoped, else "all 50 states"
+  - **Use-tax accrual** — off / on with payable account ✓ /
+    on with payable account ✗ NOT SET
+  - **Buyer location** — set partner name, else "company main
+    address (default)"
+  - **Fail-soft** — on / off (strict)
+  - **Outage alerts** — N recipient(s) at threshold / no recipients
+    configured
+
+  When ``ostax_accrue_use_tax`` is ON but
+  ``ostax_use_tax_payable_account_id`` is unset (a hard footgun —
+  next vendor-bill post would raise ``UserError``), the notification
+  kind escalates from **success** (green) to **warning** (yellow).
+  Soft hints (no alert recipients, default buyer-location fallback)
+  surface in the message but don't escalate the kind.
+
+- New helper ``ResCompany._ostax_config_summary()`` returns
+  ``(summary_text, has_hard_warnings)`` for reuse outside the
+  Test Connection action.
+
+### Tests
+
+- 5 new tests in ``test_settings.py`` covering: summary appears in
+  the message, missing-payable-account escalates to warning,
+  setting the account clears the warning, nexus list is rendered
+  with state codes, no-recipients is a soft hint that doesn't
+  escalate the kind.
+
 ## [v0.3.2] — 2026-05-08
 
 ### Changed
