@@ -12,9 +12,11 @@ that matches the Odoo version you're patching. Don't open a PR against
 | 16.0 | `16.0` |
 | 17.0 | `17.0` |
 | 18.0 | `18.0` (default — what you see on the GitHub repo home) |
+| 19.0 | `19.0` |
 
 Bug fixes that affect multiple Odoo majors should be backported as separate
-PRs, one per branch.
+PRs, one per branch. The maintainer typically lands a patch on `18.0` first,
+then cherry-picks to the other three branches.
 
 ## Developer Certificate of Origin (DCO)
 
@@ -60,7 +62,7 @@ docker run --rm -v "$PWD:/repo" \
   bash -c 'oca_install_addons && oca_run_tests'
 ```
 
-(For 17.0 / 16.0 use the matching `oca-ci` image tag.)
+(For 16.0 / 17.0 / 19.0 use the matching `oca-ci` image tag.)
 
 ## Writing migration scripts
 
