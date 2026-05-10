@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.3.5 — per-line OST skip override.
 
 When ``account.move.line.ostax_skip`` is True on a specific line,

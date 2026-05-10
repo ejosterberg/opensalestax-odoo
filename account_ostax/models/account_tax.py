@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """account.tax override — the canonical OpenSalesTax integration point.
 
 The override engages the engine via the SDK for US partners with a

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.2.0 — vendor-bill use-tax accrual at the buyer's location.
 
 When ``company.ostax_accrue_use_tax`` is ON, vendor bills route

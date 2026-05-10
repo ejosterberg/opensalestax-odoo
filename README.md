@@ -1,7 +1,7 @@
 # opensalestax-odoo
 
 [![PyPI](https://img.shields.io/pypi/v/odoo-addon-account-ostax?label=PyPI)](https://pypi.org/project/odoo-addon-account-ostax/)
-[![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](LICENSE)
+[![License: LGPL-3.0 OR AGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0_OR_AGPL--3.0-blue.svg)](LICENSE)
 [![Odoo 16.0](https://img.shields.io/badge/Odoo-16.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/16.0)
 [![Odoo 17.0](https://img.shields.io/badge/Odoo-17.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/17.0)
 [![Odoo 18.0](https://img.shields.io/badge/Odoo-18.0-714B67.svg)](https://github.com/ejosterberg/opensalestax-odoo/tree/18.0)
@@ -299,8 +299,20 @@ or provide legal/tax advice.
 
 ## License
 
-[LGPL-3](LICENSE) (or-later) per the project's per-platform license carve-out.
-Apache-2.0 SDK consumed. DCO sign-off required on every commit; no AI
+**Dual-licensed** under your choice of either
+[**LGPL-3.0-or-later**](LICENSE-LGPL.txt) **OR**
+[**AGPL-3.0-or-later**](LICENSE-AGPL.txt). SPDX expression:
+`LGPL-3.0-or-later OR AGPL-3.0-or-later`. See [`LICENSE`](LICENSE)
+for the full declaration.
+
+Most users embedding the connector in a self-hosted Odoo deployment
+will find LGPL-3.0-or-later sufficient. The AGPL-3.0-or-later option
+exists primarily to enable upstream distribution via the
+[OCA `account-fiscal-rule`](https://github.com/OCA/account-fiscal-rule)
+repository, which requires AGPL-3.
+
+Apache-2.0 SDK ([opensalestax](https://pypi.org/project/opensalestax/))
+consumed. DCO sign-off required on every commit; no AI
 co-author trailers. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Status

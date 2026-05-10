@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """Per-company OpenSalesTax settings + engine-client helper.
 
 Settings live on res.company so multi-company Odoo deployments can

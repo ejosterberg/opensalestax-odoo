@@ -37,14 +37,23 @@ authors take responsibility for their contributions.
 
 ## License
 
-By contributing, you agree your contribution is licensed under
-**LGPL-3-or-later** (the project license; see [LICENSE](LICENSE) and the
-SPDX header on every source file).
+By contributing, you agree your contribution is **dual-licensed
+under your choice of LGPL-3.0-or-later OR AGPL-3.0-or-later**.
 
-If this connector is later submitted upstream to OCA, the maintainer
-will relicense to AGPL-3 to match OCA's submission requirements. By
-contributing under LGPL-3-or-later, you implicitly authorize that
-relicensing for OCA submission.
+The dual license enables two distribution paths from a single
+source:
+
+* Self-hosted Odoo deployments embedding the connector typically
+  pick **LGPL-3.0-or-later** (more permissive — does not propagate
+  to the rest of an Odoo install).
+* OCA upstream distribution via
+  [`OCA/account-fiscal-rule`](https://github.com/OCA/account-fiscal-rule)
+  picks **AGPL-3.0-or-later** (matches OCA's submission policy).
+
+Recipient picks. See [`LICENSE`](LICENSE),
+[`LICENSE-LGPL.txt`](LICENSE-LGPL.txt),
+[`LICENSE-AGPL.txt`](LICENSE-AGPL.txt), and the SPDX header on
+every source file (``LGPL-3.0-or-later OR AGPL-3.0-or-later``).
 
 ## Quality gate — before opening a PR
 

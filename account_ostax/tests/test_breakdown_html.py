@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later OR AGPL-3.0-or-later
 """v0.3.4 — breakdown JSON → HTML table conversion."""
 
 from __future__ import annotations
